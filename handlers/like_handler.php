@@ -1,136 +1,91 @@
 <?php
 // ============================================
-// Like/Unlike Handler
+// Like / Unlike Handler (Robust + Sync-safe)
+// Path: handlers/like_handler.php
 // ============================================
 
-session_start();
+require_once __DIR__ . '/../init.php';          // session + DB ($pdo)
 header('Content-Type: application/json');
 
-// Check if user is logged in
+// Must be logged in
 if (!isset($_SESSION['user_id'])) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'You must be logged in to like posts'
-    ]);
+    echo json_encode(['success' => false, 'message' => 'You must be logged in']);
     exit;
 }
 
-// Database connection
-try {
-    $pdo = new PDO(
-        'mysql:host=localhost;dbname=content_discovery;charset=utf8mb4',
-        'root',
-        '',
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES => false
-        ]
-    );
-} catch (PDOException $e) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Database connection failed'
-    ]);
-    exit;
-}
+$user_id = (int)$_SESSION['user_id'];
 
-// Get JSON input
+// Read JSON body
 $input = json_decode(file_get_contents('php://input'), true);
+if (!is_array($input)) $input = [];
 
-if (!isset($input['post_id']) || !isset($input['action'])) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Invalid request'
-    ]);
+$post_id = isset($input['post_id']) ? (int)$input['post_id'] : 0;
+$action  = isset($input['action']) ? (string)$input['action'] : 'toggle';
+
+if ($post_id <= 0) {
+    echo json_encode(['success' => false, 'message' => 'Invalid post_id']);
     exit;
 }
 
-$post_id = intval($input['post_id']);
-$action = $input['action'];
-$user_id = $_SESSION['user_id'];
+if (!in_array($action, ['like', 'unlike', 'toggle'], true)) {
+    echo json_encode(['success' => false, 'message' => 'Invalid action']);
+    exit;
+}
 
-// Validate post exists
 try {
-    $check_stmt = $pdo->prepare("SELECT id FROM content WHERE id = :post_id AND is_published = 1");
-    $check_stmt->execute([':post_id' => $post_id]);
-    
-    if (!$check_stmt->fetch()) {
-        echo json_encode([
-            'success' => false,
-            'message' => 'Post not found'
-        ]);
+    // Validate post exists
+    $check = $pdo->prepare("SELECT id FROM content WHERE id = :id AND is_published = 1");
+    $check->execute([':id' => $post_id]);
+    if (!$check->fetch()) {
+        echo json_encode(['success' => false, 'message' => 'Post not found']);
         exit;
     }
-} catch (PDOException $e) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'Error validating post'
-    ]);
-    exit;
-}
 
-try {
-    if ($action === 'like') {
-        // Check if already liked
-        $check_like = $pdo->prepare("SELECT id FROM likes WHERE user_id = :user_id AND content_id = :content_id");
-        $check_like->execute([':user_id' => $user_id, ':content_id' => $post_id]);
-        
-        if ($check_like->fetch()) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'You have already liked this post'
-            ]);
-            exit;
-        }
-        
-        // Add like
-        $stmt = $pdo->prepare("INSERT INTO likes (user_id, content_id) VALUES (:user_id, :content_id)");
-        $stmt->execute([':user_id' => $user_id, ':content_id' => $post_id]);
-        
-        // Update like count
-        $update_stmt = $pdo->prepare("UPDATE content SET likes = likes + 1 WHERE id = :post_id");
-        $update_stmt->execute([':post_id' => $post_id]);
-        
-        echo json_encode([
-            'success' => true,
-            'message' => 'Post liked successfully',
-            'action' => 'liked'
-        ]);
-        
-    } elseif ($action === 'unlike') {
-        // Remove like
-        $stmt = $pdo->prepare("DELETE FROM likes WHERE user_id = :user_id AND content_id = :content_id");
-        $stmt->execute([':user_id' => $user_id, ':content_id' => $post_id]);
-        
-        if ($stmt->rowCount() > 0) {
-            // Update like count
-            $update_stmt = $pdo->prepare("UPDATE content SET likes = likes - 1 WHERE id = :post_id");
-            $update_stmt->execute([':post_id' => $post_id]);
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Post unliked successfully',
-                'action' => 'unliked'
-            ]);
-        } else {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Like not found'
-            ]);
-        }
-    } else {
-        echo json_encode([
-            'success' => false,
-            'message' => 'Invalid action'
-        ]);
+    $pdo->beginTransaction();
+
+    // Check current like state
+    $likedStmt = $pdo->prepare("SELECT id FROM likes WHERE user_id = :u AND content_id = :c LIMIT 1");
+    $likedStmt->execute([':u' => $user_id, ':c' => $post_id]);
+    $alreadyLiked = (bool)$likedStmt->fetch();
+
+    $finalLiked = $alreadyLiked;
+
+    if ($action === 'toggle') {
+        $action = $alreadyLiked ? 'unlike' : 'like';
     }
-    
-} catch (PDOException $e) {
-    error_log('Like handler error: ' . $e->getMessage());
+
+    if ($action === 'like') {
+        if (!$alreadyLiked) {
+            $ins = $pdo->prepare("INSERT INTO likes (user_id, content_id) VALUES (:u, :c)");
+            $ins->execute([':u' => $user_id, ':c' => $post_id]);
+            $finalLiked = true;
+        }
+    } else { // unlike
+        if ($alreadyLiked) {
+            $del = $pdo->prepare("DELETE FROM likes WHERE user_id = :u AND content_id = :c");
+            $del->execute([':u' => $user_id, ':c' => $post_id]);
+            $finalLiked = false;
+        }
+    }
+
+    // ✅ Sync-safe like count: recompute from likes table (prevents drift)
+    $countStmt = $pdo->prepare("SELECT COUNT(*) AS cnt FROM likes WHERE content_id = :c");
+    $countStmt->execute([':c' => $post_id]);
+    $likeCount = (int)$countStmt->fetchColumn();
+
+    $upd = $pdo->prepare("UPDATE content SET likes = :cnt WHERE id = :id");
+    $upd->execute([':cnt' => $likeCount, ':id' => $post_id]);
+
+    $pdo->commit();
+
     echo json_encode([
-        'success' => false,
-        'message' => 'Failed to process like. Please try again.'
+        'success' => true,
+        'message' => $finalLiked ? 'Post liked' : 'Post unliked',
+        'liked'   => $finalLiked,
+        'likes'   => $likeCount
     ]);
+} catch (Throwable $e) {
+    if ($pdo && $pdo->inTransaction()) $pdo->rollBack();
+    error_log("Like handler error: " . $e->getMessage());
+    echo json_encode(['success' => false, 'message' => 'Server error']);
 }
-?>

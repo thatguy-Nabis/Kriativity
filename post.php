@@ -499,33 +499,35 @@ try {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        post_id: <?php echo $post_id; ?>,
-                        action: isLiked ? 'unlike' : 'like'
-                    })
+  post_id: <?php echo $post_id; ?>,
+  action: 'toggle'
+})
+
                 });
 
                 const result = await response.json();
 
                 if (result.success) {
-                    isLiked = !isLiked;
+  isLiked = !!result.liked;
+
+  if (isLiked) {
+    likeBtn.classList.add('liked');
+    likeIcon.textContent = '❤️';
+    likeText.textContent = 'Liked';
+  } else {
+    likeBtn.classList.remove('liked');
+    likeIcon.textContent = '🤍';
+    likeText.textContent = 'Like';
+  }
+
+  likeCount.textContent = Number(result.likes || 0).toLocaleString();
+  showNotification(result.message, 'success');
+} else {
+  showNotification(result.message, 'error');
+}
+
                     
-                    if (isLiked) {
-                        likeBtn.classList.add('liked');
-                        likeIcon.textContent = '❤️';
-                        likeText.textContent = 'Liked';
-                        currentLikes++;
-                    } else {
-                        likeBtn.classList.remove('liked');
-                        likeIcon.textContent = '🤍';
-                        likeText.textContent = 'Like';
-                        currentLikes--;
-                    }
-                    
-                    likeCount.textContent = currentLikes.toLocaleString();
-                    showNotification(result.message, 'success');
-                } else {
-                    showNotification(result.message, 'error');
-                }
+                  
             } catch (error) {
                 console.error('Error:', error);
                 showNotification('Failed to process like. Please try again.', 'error');

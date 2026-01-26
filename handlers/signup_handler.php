@@ -1,6 +1,6 @@
 <?php
 // ============================================
-// SIGNUP HANDLER
+// SIGNUP HANDLER (CORRECT)
 // ============================================
 
 session_start();
@@ -21,7 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Get and sanitize form data
+// Sanitize inputs
 $username = sanitizeInput($_POST['username'] ?? '');
 $email = sanitizeInput($_POST['email'] ?? '');
 $password = $_POST['password'] ?? '';
@@ -31,26 +31,27 @@ $bio = sanitizeInput($_POST['bio'] ?? '');
 $location = sanitizeInput($_POST['location'] ?? '');
 $website = sanitizeInput($_POST['website'] ?? '');
 
-// Initialize response
+// Init response
 $response = [
     'success' => false,
     'message' => '',
     'errors' => []
 ];
 
-// Validation
 $errors = [];
 
-// Username validation
+/* =========================
+   VALIDATION
+   ========================= */
+
 if (empty($username)) {
     $errors['username'] = 'Username is required';
 } elseif (!validateUsername($username)) {
-    $errors['username'] = 'Username must be 3-50 characters and contain only letters, numbers, and underscores';
+    $errors['username'] = 'Invalid username format';
 } elseif (usernameExists($pdo, $username)) {
     $errors['username'] = 'Username already taken';
 }
 
-// Email validation
 if (empty($email)) {
     $errors['email'] = 'Email is required';
 } elseif (!validateEmail($email)) {
@@ -59,7 +60,6 @@ if (empty($email)) {
     $errors['email'] = 'Email already registered';
 }
 
-// Password validation
 if (empty($password)) {
     $errors['password'] = 'Password is required';
 } else {
@@ -69,29 +69,22 @@ if (empty($password)) {
     }
 }
 
-// Confirm password validation
 if ($password !== $confirm_password) {
     $errors['confirm_password'] = 'Passwords do not match';
 }
 
-// Full name validation
 if (empty($full_name)) {
     $errors['full_name'] = 'Full name is required';
-} elseif (strlen($full_name) > 100) {
-    $errors['full_name'] = 'Full name must be less than 100 characters';
 }
 
-// Website validation
 if (!empty($website) && !filter_var($website, FILTER_VALIDATE_URL)) {
     $errors['website'] = 'Invalid website URL';
 }
 
-// Bio validation
 if (strlen($bio) > 500) {
     $errors['bio'] = 'Bio must be less than 500 characters';
 }
 
-// If there are validation errors, return them
 if (!empty($errors)) {
     $response['errors'] = $errors;
     $response['message'] = 'Please fix the errors below';
@@ -99,7 +92,10 @@ if (!empty($errors)) {
     exit;
 }
 
-// Prepare user data
+/* =========================
+   CREATE USER
+   ========================= */
+
 $userData = [
     'username' => $username,
     'email' => $email,
@@ -110,29 +106,31 @@ $userData = [
     'website' => $website
 ];
 
-// Register user
 $result = registerUser($pdo, $userData);
 
-if ($result['success']) {
-    // Set session variables
-    $_SESSION['user_id'] = $result['user_id'];
-    $_SESSION['username'] = $username;
-    $_SESSION['full_name'] = $full_name;
-    
-    // Generate CSRF token for the session
-    generateCSRFToken();
-    
-    $response['success'] = true;
+if (!$result['success']) {
     $response['message'] = $result['message'];
-    $response['redirect'] = '../homepage.php';
-    $response['user'] = [
-        'username' => $username,
-        'full_name' => $full_name
-    ];
-} else {
-    $response['message'] = $result['message'];
+    echo json_encode($response);
+    exit;
 }
+
+/* =========================
+   SET SESSION
+   ========================= */
+
+$_SESSION['user_id'] = $result['user_id'];
+$_SESSION['username'] = $username;
+$_SESSION['full_name'] = $full_name;
+
+generateCSRFToken();
+
+/* =========================
+   REDIRECT TO ONBOARDING
+   ========================= */
+
+$response['success'] = true;
+$response['message'] = 'Signup successful';
+$response['redirect'] = './onboarding_preferences.php';
 
 echo json_encode($response);
 exit;
-?>

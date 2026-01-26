@@ -5,6 +5,8 @@
 
 session_start();
 
+
+
 // Include required files
 require_once '../config/database.php';
 require_once '../includes/auth.php';
@@ -50,16 +52,25 @@ $result = loginUser($pdo, $username_or_email, $password);
 
 if ($result['success']) {
     $user = $result['user'];
-    
+
     // Set session variables
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
     $_SESSION['full_name'] = $user['full_name'];
     $_SESSION['email'] = $user['email'];
-    
+
     // Generate CSRF token for the session
     generateCSRFToken();
-    
+
+    // 🔴 ONBOARDING SAFETY CHECK (CORRECT PLACE)
+    if ((int) $user['onboarding_completed'] === 0) {
+    $response['success'] = true;
+    $response['redirect'] = '../onboarding_preferences.php';
+    echo json_encode($response);
+    exit;
+}
+
+
     // Handle remember me
     if ($remember_me) {
         $token = setRememberToken($pdo, $user['id']);
@@ -85,7 +96,7 @@ if ($result['success']) {
             );
         }
     }
-    
+
     $response['success'] = true;
     $response['message'] = $result['message'];
     $response['redirect'] = '../homepage.php';
