@@ -1,59 +1,76 @@
 <?php
-// ============================================
-// User Profile Page - Updated with Handlers
-// Primary Color: #CEA1F5 (Purple)
-// Secondary Color: #15051d (Dark Purple)
-// ============================================
+/**
+ * ============================================
+ * User Profile Page
+ * Primary Color: #CEA1F5 (Purple)
+ * Secondary Color: #15051d (Dark Purple)
+ * ============================================
+ */
 
-// Include session check
+// Include required files
 require_once 'includes/session_check.php';
 require_once 'config/database.php';
 require_once 'includes/auth.php';
 
-// Require user to be logged in
+// Require authentication
 requireLogin('profile.php');
 
-// Get current user data from database
+// Get current user data
 $user = getCurrentUser($pdo);
 
 if (!$user) {
-    // If user not found, logout and redirect
     header('Location: logout.php');
     exit;
 }
+
+// Get user's posts
+$posts_query = $pdo->prepare("
+    SELECT * FROM content 
+    WHERE user_id = :user_id 
+    AND is_published = 1 
+    ORDER BY created_at DESC
+");
+$posts_query->execute([':user_id' => $user['id']]);
+$user_posts = $posts_query->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Profile page for <?php echo htmlspecialchars($user['username']); ?>">
     <title>Profile - <?php echo htmlspecialchars($user['username']); ?></title>
     
     <!-- Global Stylesheet -->
     <link rel="stylesheet" href="styles.css">
     
     <style>
-        /* Additional profile-specific styles */
+        /* ================================
+           PROFILE PAGE STYLES
+           ================================ */
+
+        /* --- LAYOUT --- */
         .profile-container {
             max-width: 1200px;
             margin: 2rem auto;
             padding: 0 2rem;
         }
 
+        /* --- PROFILE HEADER --- */
         .profile-header {
             position: relative;
-            border-radius: 16px;
-            overflow: hidden;
+            margin-bottom: 2rem;
             background: linear-gradient(135deg, rgba(206, 161, 245, 0.1) 0%, rgba(21, 5, 29, 0.8) 100%);
             border: 1px solid rgba(206, 161, 245, 0.15);
-            margin-bottom: 2rem;
+            border-radius: 16px;
+            overflow: hidden;
         }
 
         .cover-image {
+            position: relative;
             width: 100%;
             height: 250px;
             background: linear-gradient(135deg, #CEA1F5 0%, #6a3f9e 50%, #15051d 100%);
-            position: relative;
         }
 
         .cover-image::before {
@@ -66,13 +83,14 @@ if (!$user) {
             background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.1), transparent);
         }
 
+        /* --- PROFILE INFO --- */
         .profile-info-section {
-            padding: 2rem;
+            position: relative;
             display: flex;
             gap: 2rem;
             align-items: flex-start;
+            padding: 2rem;
             margin-top: -80px;
-            position: relative;
         }
 
         .profile-image-container {
@@ -81,14 +99,14 @@ if (!$user) {
         }
 
         .profile-image {
-            width: 150px;
-            height: 150px;
-            border-radius: 50%;
-            border: 5px solid #15051d;
-            background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
             display: flex;
             align-items: center;
             justify-content: center;
+            width: 150px;
+            height: 150px;
+            background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
+            border: 5px solid #15051d;
+            border-radius: 50%;
             font-size: 3.5rem;
             font-weight: 700;
             color: #15051d;
@@ -97,17 +115,17 @@ if (!$user) {
 
         .upload-badge {
             position: absolute;
-            bottom: 5px;
             right: 5px;
-            width: 40px;
-            height: 40px;
-            background: #CEA1F5;
-            border-radius: 50%;
+            bottom: 5px;
             display: flex;
             align-items: center;
             justify-content: center;
-            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            background: #CEA1F5;
             border: 3px solid #15051d;
+            border-radius: 50%;
+            cursor: pointer;
             transition: all 0.3s ease;
         }
 
@@ -116,39 +134,47 @@ if (!$user) {
             box-shadow: 0 0 20px rgba(206, 161, 245, 0.5);
         }
 
+        .upload-badge:focus {
+            outline: 2px solid rgba(206, 161, 245, 0.5);
+            outline-offset: 2px;
+        }
+
+        /* --- PROFILE DETAILS --- */
         .profile-details {
             flex: 1;
             padding-top: 60px;
         }
 
         .profile-username {
-            font-size: 2rem;
-            font-weight: 700;
             margin-bottom: 0.5rem;
             background: linear-gradient(135deg, #CEA1F5 0%, #ffffff 100%);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-size: 2rem;
+            font-weight: 700;
+            line-height: 1.2;
         }
 
         .profile-handle {
+            margin-bottom: 1rem;
             font-size: 1rem;
             color: #a0a0a0;
-            margin-bottom: 1rem;
         }
 
         .profile-bio {
+            max-width: 600px;
+            margin-bottom: 1.5rem;
             font-size: 1rem;
             line-height: 1.6;
             color: #d0d0d0;
-            margin-bottom: 1.5rem;
-            max-width: 600px;
         }
 
+        /* --- META INFO --- */
         .profile-meta {
             display: flex;
-            gap: 2rem;
             flex-wrap: wrap;
+            gap: 2rem;
             margin-bottom: 1.5rem;
             font-size: 0.9rem;
             color: #b0b0b0;
@@ -164,6 +190,17 @@ if (!$user) {
             color: #CEA1F5;
         }
 
+        .meta-item a {
+            color: #CEA1F5;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .meta-item a:hover {
+            color: #b88de0;
+        }
+
+        /* --- STATS --- */
         .profile-stats {
             display: flex;
             gap: 2rem;
@@ -175,18 +212,19 @@ if (!$user) {
         }
 
         .stat-number {
+            display: block;
             font-size: 1.5rem;
             font-weight: 700;
             color: #CEA1F5;
-            display: block;
         }
 
         .stat-label {
+            margin-top: 0.25rem;
             font-size: 0.85rem;
             color: #a0a0a0;
-            margin-top: 0.25rem;
         }
 
+        /* --- ACTION BUTTONS --- */
         .profile-actions {
             display: flex;
             gap: 1rem;
@@ -194,12 +232,17 @@ if (!$user) {
 
         .action-button {
             padding: 0.75rem 2rem;
+            border: none;
             border-radius: 50px;
+            font-size: 0.95rem;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s ease;
-            border: none;
-            font-size: 0.95rem;
+        }
+
+        .action-button:focus {
+            outline: 2px solid rgba(206, 161, 245, 0.5);
+            outline-offset: 2px;
         }
 
         .btn-primary {
@@ -223,13 +266,14 @@ if (!$user) {
             border-color: #CEA1F5;
         }
 
+        /* --- EDIT SECTION --- */
         .edit-section {
+            display: none;
+            padding: 2rem;
+            margin-top: 2rem;
             background: linear-gradient(135deg, rgba(206, 161, 245, 0.05) 0%, rgba(21, 5, 29, 0.8) 100%);
             border: 1px solid rgba(206, 161, 245, 0.15);
             border-radius: 16px;
-            padding: 2rem;
-            margin-top: 2rem;
-            display: none;
         }
 
         .edit-section.active {
@@ -249,15 +293,16 @@ if (!$user) {
         }
 
         .section-title {
-            font-size: 1.5rem;
-            font-weight: 700;
             margin-bottom: 1.5rem;
             background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            background-clip: text;
+            font-size: 1.5rem;
+            font-weight: 700;
         }
 
+        /* --- FORM ELEMENTS --- */
         .form-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -275,9 +320,9 @@ if (!$user) {
         }
 
         .form-label {
+            font-size: 0.9rem;
             font-weight: 600;
             color: #CEA1F5;
-            font-size: 0.9rem;
         }
 
         .form-input,
@@ -286,9 +331,9 @@ if (!$user) {
             background-color: rgba(206, 161, 245, 0.08);
             border: 1px solid rgba(206, 161, 245, 0.2);
             border-radius: 10px;
-            color: #e0e0e0;
-            font-size: 0.95rem;
             font-family: inherit;
+            font-size: 0.95rem;
+            color: #e0e0e0;
             transition: all 0.3s ease;
         }
 
@@ -300,13 +345,14 @@ if (!$user) {
             box-shadow: 0 0 15px rgba(206, 161, 245, 0.2);
         }
 
-        .form-input.error {
+        .form-input.error,
+        .form-textarea.error {
             border-color: #ff6b6b;
         }
 
         .form-textarea {
-            resize: vertical;
             min-height: 120px;
+            resize: vertical;
         }
 
         .char-counter {
@@ -321,48 +367,214 @@ if (!$user) {
         }
 
         .error-message {
-            color: #ff6b6b;
-            font-size: 0.85rem;
             display: none;
+            font-size: 0.85rem;
+            color: #ff6b6b;
         }
 
         .error-message.show {
             display: block;
         }
 
+        /* --- POSTS SECTION --- */
+        .posts-section {
+            margin-top: 2rem;
+        }
+
+        .posts-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .posts-title {
+            background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .btn-create-post {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
+            border: none;
+            border-radius: 50px;
+            font-weight: 600;
+            color: #15051d;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-create-post:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(206, 161, 245, 0.4);
+        }
+
+        .posts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .post-card {
+            background: linear-gradient(135deg, rgba(206, 161, 245, 0.05) 0%, rgba(21, 5, 29, 0.8) 100%);
+            border: 1px solid rgba(206, 161, 245, 0.15);
+            border-radius: 12px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .post-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(206, 161, 245, 0.3);
+            box-shadow: 0 10px 30px rgba(206, 161, 245, 0.2);
+        }
+
+        .post-image {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(135deg, #CEA1F5 0%, #6a3f9e 50%, #15051d 100%);
+            object-fit: cover;
+        }
+
+        .post-content {
+            padding: 1.25rem;
+        }
+
+        .post-type-badge {
+            display: inline-block;
+            margin-bottom: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            background: rgba(206, 161, 245, 0.2);
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #CEA1F5;
+        }
+
+        .post-title {
+            display: -webkit-box;
+            margin-bottom: 0.5rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            line-height: 1.4;
+            color: #fff;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .post-description {
+            display: -webkit-box;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: #b0b0b0;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .post-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(206, 161, 245, 0.1);
+            font-size: 0.85rem;
+            color: #a0a0a0;
+        }
+
+        .post-stats {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .post-stat {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .post-date {
+            font-size: 0.8rem;
+        }
+
+        /* --- EMPTY STATE --- */
+        .empty-posts {
+            padding: 4rem 2rem;
+            text-align: center;
+            color: #a0a0a0;
+        }
+
+        .empty-posts-icon {
+            margin-bottom: 1rem;
+            font-size: 4rem;
+        }
+
+        .empty-posts-text {
+            margin-bottom: 1.5rem;
+            font-size: 1.1rem;
+        }
+
+        /* --- NOTIFICATION --- */
         .notification {
             position: fixed;
             top: 100px;
             right: 2rem;
+            z-index: 1001;
             padding: 1rem 1.5rem;
             border-radius: 10px;
             font-weight: 600;
+            color: white;
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            pointer-events: none;
             transform: translateX(400px);
-            transition: transform 0.3s ease;
-            z-index: 1001;
+            transition: all 0.3s ease;
         }
 
         .notification.show {
+            opacity: 1;
+            pointer-events: auto;
             transform: translateX(0);
         }
 
         .notification.success {
             background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
-            color: white;
         }
 
         .notification.error {
             background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
-            color: white;
         }
 
+        /* --- RESPONSIVE --- */
         @media (max-width: 768px) {
+            .profile-container {
+                padding: 0 1rem;
+            }
+
+            .cover-image {
+                height: 180px;
+            }
+
             .profile-info-section {
                 flex-direction: column;
                 align-items: center;
-                text-align: center;
                 padding: 1.5rem;
+                text-align: center;
+            }
+
+            .profile-image {
+                width: 120px;
+                height: 120px;
+                font-size: 2.5rem;
             }
 
             .profile-details {
@@ -375,22 +587,27 @@ if (!$user) {
                 justify-content: center;
             }
 
+            .profile-actions {
+                flex-direction: column;
+                width: 100%;
+            }
+
+            .action-button {
+                width: 100%;
+            }
+
             .form-grid {
                 grid-template-columns: 1fr;
             }
 
-            .profile-container {
-                padding: 0 1rem;
+            .posts-grid {
+                grid-template-columns: 1fr;
             }
 
-            .cover-image {
-                height: 180px;
-            }
-
-            .profile-image {
-                width: 120px;
-                height: 120px;
-                font-size: 2.5rem;
+            .posts-header {
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
             }
 
             .notification {
@@ -401,62 +618,68 @@ if (!$user) {
     </style>
 </head>
 <body>
-    <!-- Include Header Component -->
+    <!-- Header Component -->
     <?php include 'header.php'; ?>
 
     <!-- ============================================
          PROFILE CONTAINER
          ============================================ -->
-    <div class="profile-container">
-        <!-- Profile Header with Cover -->
-        <div class="profile-header">
-            <div class="cover-image"></div>
+    <main class="profile-container">
+        <!-- Profile Header -->
+        <section class="profile-header">
+            <div class="cover-image" role="img" aria-label="Profile cover image"></div>
             
             <div class="profile-info-section">
                 <!-- Profile Image -->
                 <div class="profile-image-container">
-                    <div class="profile-image">
+                    <div class="profile-image" role="img" aria-label="Profile picture">
                         <?php echo strtoupper(substr($user['full_name'], 0, 1)); ?>
                     </div>
-                    <div class="upload-badge" title="Change profile picture">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <button class="upload-badge" title="Change profile picture" aria-label="Change profile picture">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
                             <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                             <circle cx="12" cy="13" r="4"/>
                         </svg>
-                    </div>
+                    </button>
                 </div>
 
                 <!-- Profile Details -->
                 <div class="profile-details">
                     <h1 class="profile-username" id="displayFullName"><?php echo htmlspecialchars($user['full_name']); ?></h1>
                     <p class="profile-handle">@<?php echo htmlspecialchars($user['username']); ?></p>
-                    <p class="profile-bio" id="displayBio"><?php echo htmlspecialchars($user['bio'] ?? ''); ?></p>
+                    
+                    <?php if (!empty($user['bio'])): ?>
+                    <p class="profile-bio" id="displayBio"><?php echo htmlspecialchars($user['bio']); ?></p>
+                    <?php endif; ?>
 
-                    <!-- Profile Meta Information -->
+                    <!-- Meta Information -->
                     <div class="profile-meta">
                         <?php if (!empty($user['location'])): ?>
                         <div class="meta-item">
-                            <span class="meta-icon">📍</span>
+                            <span class="meta-icon" aria-hidden="true">📍</span>
                             <span id="displayLocation"><?php echo htmlspecialchars($user['location']); ?></span>
                         </div>
                         <?php endif; ?>
                         
                         <?php if (!empty($user['website'])): ?>
                         <div class="meta-item">
-                            <span class="meta-icon">🌐</span>
-                            <a href="<?php echo htmlspecialchars($user['website']); ?>" target="_blank" style="color: #CEA1F5; text-decoration: none;" id="displayWebsite">
+                            <span class="meta-icon" aria-hidden="true">🌐</span>
+                            <a href="<?php echo htmlspecialchars($user['website']); ?>" 
+                               target="_blank" 
+                               rel="noopener noreferrer"
+                               id="displayWebsite">
                                 <?php echo htmlspecialchars($user['website']); ?>
                             </a>
                         </div>
                         <?php endif; ?>
                         
                         <div class="meta-item">
-                            <span class="meta-icon">📅</span>
+                            <span class="meta-icon" aria-hidden="true">📅</span>
                             <span>Joined <?php echo date('F Y', strtotime($user['join_date'])); ?></span>
                         </div>
                     </div>
 
-                    <!-- Profile Stats -->
+                    <!-- Stats -->
                     <div class="profile-stats">
                         <div class="stat-box">
                             <span class="stat-number"><?php echo number_format($user['total_posts']); ?></span>
@@ -477,21 +700,21 @@ if (!$user) {
                         <button class="action-button btn-primary" id="toggleEditBtn">
                             Edit Profile
                         </button>
-                        <button class="action-button btn-secondary">
+                        <button class="action-button btn-secondary" id="shareProfileBtn">
                             Share Profile
                         </button>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- ============================================
              EDIT PROFILE SECTION
              ============================================ -->
-        <div class="edit-section" id="editSection">
-            <h2 class="section-title">Edit Profile Information</h2>
+        <section class="edit-section" id="editSection" aria-labelledby="editSectionTitle">
+            <h2 class="section-title" id="editSectionTitle">Edit Profile Information</h2>
             
-            <form id="profileForm">
+            <form id="profileForm" novalidate>
                 <div class="form-grid">
                     <!-- Full Name -->
                     <div class="form-group">
@@ -503,8 +726,10 @@ if (!$user) {
                             class="form-input" 
                             value="<?php echo htmlspecialchars($user['full_name']); ?>"
                             required
+                            aria-required="true"
+                            aria-describedby="fullNameError"
                         >
-                        <span class="error-message" id="fullNameError"></span>
+                        <span class="error-message" id="fullNameError" role="alert"></span>
                     </div>
 
                     <!-- Location -->
@@ -530,8 +755,9 @@ if (!$user) {
                             class="form-input" 
                             value="<?php echo htmlspecialchars($user['website'] ?? ''); ?>"
                             placeholder="https://yourwebsite.com"
+                            aria-describedby="websiteError"
                         >
-                        <span class="error-message" id="websiteError"></span>
+                        <span class="error-message" id="websiteError" role="alert"></span>
                     </div>
 
                     <!-- Bio -->
@@ -542,11 +768,12 @@ if (!$user) {
                             name="bio" 
                             class="form-textarea"
                             maxlength="500"
+                            aria-describedby="charCount bioError"
                         ><?php echo htmlspecialchars($user['bio'] ?? ''); ?></textarea>
-                        <div class="char-counter">
-                            <span id="charCount"><?php echo strlen($user['bio'] ?? ''); ?></span>/500 characters
+                        <div class="char-counter" id="charCount" aria-live="polite">
+                            <span id="charCountValue"><?php echo strlen($user['bio'] ?? ''); ?></span>/500 characters
                         </div>
-                        <span class="error-message" id="bioError"></span>
+                        <span class="error-message" id="bioError" role="alert"></span>
                     </div>
 
                     <!-- Submit Buttons -->
@@ -562,288 +789,131 @@ if (!$user) {
                     </div>
                 </div>
             </form>
-        </div>
-    </div>
+        </section>
 
-    <?php
-// ============================================
-// Add this section to profile.php after the edit section
-// ============================================
-
-// Get user's posts
-$posts_query = $pdo->prepare("
-    SELECT * FROM content 
-    WHERE user_id = :user_id 
-    AND is_published = 1 
-    ORDER BY created_at DESC
-");
-$posts_query->execute([':user_id' => $user['id']]);
-$user_posts = $posts_query->fetchAll();
-?>
-
-<!-- Add this CSS to the <style> section in profile.php -->
-<style>
-.posts-section {
-    margin-top: 2rem;
-}
-
-.posts-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-}
-
-.posts-title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-.btn-create-post {
-    padding: 0.75rem 1.5rem;
-    background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
-    color: #15051d;
-    border: none;
-    border-radius: 50px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-    text-decoration: none;
-    display: inline-block;
-}
-
-.btn-create-post:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(206, 161, 245, 0.4);
-}
-
-.posts-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1.5rem;
-}
-
-.post-card {
-    background: linear-gradient(135deg, rgba(206, 161, 245, 0.05) 0%, rgba(21, 5, 29, 0.8) 100%);
-    border: 1px solid rgba(206, 161, 245, 0.15);
-    border-radius: 12px;
-    overflow: hidden;
-    transition: all 0.3s ease;
-    cursor: pointer;
-}
-
-.post-card:hover {
-    transform: translateY(-5px);
-    border-color: rgba(206, 161, 245, 0.3);
-    box-shadow: 0 10px 30px rgba(206, 161, 245, 0.2);
-}
-
-.post-image {
-    width: 100%;
-    height: 200px;
-    object-fit: cover;
-    background: linear-gradient(135deg, #CEA1F5 0%, #6a3f9e 50%, #15051d 100%);
-}
-
-.post-content {
-    padding: 1.25rem;
-}
-
-.post-type-badge {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    background: rgba(206, 161, 245, 0.2);
-    color: #CEA1F5;
-    border-radius: 12px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
-}
-
-.post-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: #fff;
-    margin-bottom: 0.5rem;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.post-description {
-    font-size: 0.9rem;
-    color: #b0b0b0;
-    line-height: 1.5;
-    margin-bottom: 1rem;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.post-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.85rem;
-    color: #a0a0a0;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(206, 161, 245, 0.1);
-}
-
-.post-stats {
-    display: flex;
-    gap: 1rem;
-}
-
-.post-stat {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-}
-
-.post-date {
-    font-size: 0.8rem;
-}
-
-.empty-posts {
-    text-align: center;
-    padding: 4rem 2rem;
-    color: #a0a0a0;
-}
-
-.empty-posts-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
-}
-
-.empty-posts-text {
-    font-size: 1.1rem;
-    margin-bottom: 1.5rem;
-}
-
-@media (max-width: 768px) {
-    .posts-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .posts-header {
-        flex-direction: column;
-        gap: 1rem;
-        align-items: flex-start;
-    }
-}
-</style>
-
-<!-- Add this HTML section after the edit-section div and before the footer -->
-<div class="posts-section">
-    <div class="posts-header">
-        <h2 class="posts-title">My Posts (<?php echo count($user_posts); ?>)</h2>
-        <a href="create-post.php" class="btn-create-post">+ Create New Post</a>
-    </div>
-
-    <?php if (empty($user_posts)): ?>
-        <div class="section" style="background: linear-gradient(135deg, rgba(206, 161, 245, 0.05) 0%, rgba(21, 5, 29, 0.8) 100%); border: 1px solid rgba(206, 161, 245, 0.15); border-radius: 16px;">
-            <div class="empty-posts">
-                <div class="empty-posts-icon">📝</div>
-                <div class="empty-posts-text">You haven't created any posts yet</div>
-                <a href="create-post.php" class="btn-create-post">Create Your First Post</a>
+        <!-- ============================================
+             USER POSTS SECTION
+             ============================================ -->
+        <section class="posts-section" aria-labelledby="postsSectionTitle">
+            <div class="posts-header">
+                <h2 class="posts-title" id="postsSectionTitle">My Posts (<?php echo count($user_posts); ?>)</h2>
+                <a href="create-post.php" class="btn-create-post">+ Create New Post</a>
             </div>
-        </div>
-    <?php else: ?>
-        <div class="posts-grid">
-            <?php foreach ($user_posts as $post): ?>
-                <div class="post-card" onclick="window.location.href='post.php?id=<?php echo $post['id']; ?>'">
-                    <?php if ($post['image_url']): ?>
-                        <img src="<?php echo htmlspecialchars($post['image_url']); ?>" alt="<?php echo htmlspecialchars($post['title']); ?>" class="post-image">
-                    <?php else: ?>
-                        <div class="post-image"></div>
-                    <?php endif; ?>
-                    
-                    <div class="post-content">
-                        <span class="post-type-badge"><?php echo ucfirst($post['content_type']); ?></span>
-                        <h3 class="post-title"><?php echo htmlspecialchars($post['title']); ?></h3>
-                        
-                        <?php if ($post['description']): ?>
-                            <p class="post-description"><?php echo htmlspecialchars($post['description']); ?></p>
-                        <?php endif; ?>
-                        
-                        <div class="post-meta">
-                            <div class="post-stats">
-                                <div class="post-stat">
-                                    <span>👁️</span>
-                                    <span><?php echo number_format($post['views']); ?></span>
-                                </div>
-                                <div class="post-stat">
-                                    <span>❤️</span>
-                                    <span><?php echo number_format($post['likes']); ?></span>
-                                </div>
-                            </div>
-                            <div class="post-date">
-                                <?php 
-                                $date = new DateTime($post['created_at']);
-                                echo $date->format('M d, Y');
-                                ?>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    <?php endif; ?>
-</div>
 
-    <!-- Include Footer Component -->
+            <?php if (empty($user_posts)): ?>
+                <div class="empty-posts">
+                    <div class="empty-posts-icon" aria-hidden="true">📝</div>
+                    <div class="empty-posts-text">You haven't created any posts yet</div>
+                    <a href="create-post.php" class="btn-create-post">Create Your First Post</a>
+                </div>
+            <?php else: ?>
+                <div class="posts-grid">
+                    <?php foreach ($user_posts as $post): ?>
+                        <article class="post-card" onclick="window.location.href='post.php?id=<?php echo $post['id']; ?>'" role="button" tabindex="0">
+                            <?php if ($post['image_url']): ?>
+                                <img src="<?php echo htmlspecialchars($post['image_url']); ?>" 
+                                     alt="<?php echo htmlspecialchars($post['title']); ?>" 
+                                     class="post-image"
+                                     loading="lazy">
+                            <?php else: ?>
+                                <div class="post-image" role="img" aria-label="Default post image"></div>
+                            <?php endif; ?>
+                            
+                            <div class="post-content">
+                                <span class="post-type-badge"><?php echo ucfirst($post['content_type']); ?></span>
+                                <h3 class="post-title"><?php echo htmlspecialchars($post['title']); ?></h3>
+                                
+                                <?php if ($post['description']): ?>
+                                    <p class="post-description"><?php echo htmlspecialchars($post['description']); ?></p>
+                                <?php endif; ?>
+                                
+                                <div class="post-meta">
+                                    <div class="post-stats">
+                                        <div class="post-stat">
+                                            <span aria-hidden="true">👁️</span>
+                                            <span><?php echo number_format($post['views']); ?></span>
+                                        </div>
+                                        <div class="post-stat">
+                                            <span aria-hidden="true">❤️</span>
+                                            <span><?php echo number_format($post['likes']); ?></span>
+                                        </div>
+                                    </div>
+                                    <time class="post-date" datetime="<?php echo $post['created_at']; ?>">
+                                        <?php 
+                                        $date = new DateTime($post['created_at']);
+                                        echo $date->format('M d, Y');
+                                        ?>
+                                    </time>
+                                </div>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+    </main>
+
+    <!-- Footer Component -->
     <?php include 'footer.php'; ?>
 
     <!-- Notification Element -->
-    <div class="notification" id="notification"></div>
+    <div class="notification" id="notification" role="alert" aria-live="polite"></div>
 
     <script>
-        // ============================================
-        // JAVASCRIPT - Profile Management
-        // ============================================
+        /**
+         * ============================================
+         * Profile Management JavaScript
+         * ============================================
+         */
 
+        // DOM Elements
         const toggleEditBtn = document.getElementById('toggleEditBtn');
         const editSection = document.getElementById('editSection');
         const profileForm = document.getElementById('profileForm');
         const cancelBtn = document.getElementById('cancelBtn');
         const bioInput = document.getElementById('bio');
-        const charCount = document.getElementById('charCount');
+        const charCountValue = document.getElementById('charCountValue');
         const notification = document.getElementById('notification');
+        const saveBtn = document.getElementById('saveBtn');
 
-        // Toggle edit section visibility
+        /**
+         * Toggle edit section visibility
+         */
         toggleEditBtn.addEventListener('click', () => {
-            editSection.classList.toggle('active');
+            const isActive = editSection.classList.toggle('active');
             
-            if (editSection.classList.contains('active')) {
-                toggleEditBtn.textContent = 'Close Editor';
+            toggleEditBtn.textContent = isActive ? 'Close Editor' : 'Edit Profile';
+            
+            if (isActive) {
                 editSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            } else {
-                toggleEditBtn.textContent = 'Edit Profile';
+                // Focus first input for accessibility
+                document.getElementById('fullName').focus();
             }
         });
 
-        // Cancel button
+        /**
+         * Cancel editing
+         */
         cancelBtn.addEventListener('click', () => {
             editSection.classList.remove('active');
             toggleEditBtn.textContent = 'Edit Profile';
             profileForm.reset();
             clearErrors();
+            updateCharCount();
         });
 
-        // Character counter
-        bioInput.addEventListener('input', () => {
-            charCount.textContent = bioInput.value.length;
-        });
+        /**
+         * Character counter for bio
+         */
+        function updateCharCount() {
+            charCountValue.textContent = bioInput.value.length;
+        }
 
-        // Show notification
+        bioInput.addEventListener('input', updateCharCount);
+
+        /**
+         * Show notification
+         */
         function showNotification(message, type = 'success') {
             notification.textContent = message;
             notification.className = `notification ${type}`;
@@ -854,18 +924,23 @@ $user_posts = $posts_query->fetchAll();
             }, 4000);
         }
 
-        // Clear all errors
+        /**
+         * Clear all form errors
+         */
         function clearErrors() {
             document.querySelectorAll('.error-message').forEach(el => {
                 el.classList.remove('show');
                 el.textContent = '';
             });
+            
             document.querySelectorAll('.form-input, .form-textarea').forEach(el => {
                 el.classList.remove('error');
             });
         }
 
-        // Display errors
+        /**
+         * Display form errors
+         */
         function displayErrors(errors) {
             Object.keys(errors).forEach(field => {
                 const errorEl = document.getElementById(field + 'Error');
@@ -875,17 +950,18 @@ $user_posts = $posts_query->fetchAll();
                     errorEl.textContent = errors[field];
                     errorEl.classList.add('show');
                     inputEl.classList.add('error');
+                    inputEl.setAttribute('aria-invalid', 'true');
                 }
             });
         }
 
-        // Handle form submission
+        /**
+         * Handle form submission
+         */
         profileForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-
             clearErrors();
 
-            const saveBtn = document.getElementById('saveBtn');
             const originalText = saveBtn.textContent;
             saveBtn.textContent = 'Saving...';
             saveBtn.disabled = true;
@@ -902,21 +978,39 @@ $user_posts = $posts_query->fetchAll();
 
                 if (result.success) {
                     // Update display values
-                    document.getElementById('displayFullName').textContent = formData.get('full_name');
-                    document.getElementById('displayBio').textContent = formData.get('bio');
-                    document.getElementById('displayLocation').textContent = formData.get('location');
+                    const fullName = formData.get('full_name');
+                    const bio = formData.get('bio');
+                    const location = formData.get('location');
+                    const website = formData.get('website');
+
+                    document.getElementById('displayFullName').textContent = fullName;
+                    
+                    const bioDisplay = document.getElementById('displayBio');
+                    if (bio) {
+                        bioDisplay.textContent = bio;
+                        bioDisplay.style.display = 'block';
+                    } else {
+                        bioDisplay.style.display = 'none';
+                    }
+                    
+                    const locationDisplay = document.getElementById('displayLocation');
+                    if (locationDisplay) {
+                        locationDisplay.textContent = location;
+                    }
                     
                     const websiteLink = document.getElementById('displayWebsite');
-                    if (websiteLink) {
-                        websiteLink.textContent = formData.get('website');
-                        websiteLink.href = formData.get('website');
+                    if (websiteLink && website) {
+                        websiteLink.textContent = website;
+                        websiteLink.href = website;
                     }
 
                     showNotification(result.message, 'success');
 
                     // Close edit section
-                    editSection.classList.remove('active');
-                    toggleEditBtn.textContent = 'Edit Profile';
+                    setTimeout(() => {
+                        editSection.classList.remove('active');
+                        toggleEditBtn.textContent = 'Edit Profile';
+                    }, 500);
                 } else {
                     showNotification(result.message, 'error');
                     if (result.errors) {
@@ -924,7 +1018,7 @@ $user_posts = $posts_query->fetchAll();
                     }
                 }
             } catch (error) {
-                console.error('Error updating profile:', error);
+                console.error('Profile update error:', error);
                 showNotification('Failed to update profile. Please try again.', 'error');
             } finally {
                 saveBtn.textContent = originalText;
@@ -932,15 +1026,19 @@ $user_posts = $posts_query->fetchAll();
             }
         });
 
-        // Real-time validation
+        /**
+         * Real-time validation on blur
+         */
         document.querySelectorAll('.form-input, .form-textarea').forEach(input => {
             input.addEventListener('blur', () => {
                 const errorEl = document.getElementById(input.id + 'Error');
                 
                 if (input.hasAttribute('required') && !input.value.trim()) {
                     input.classList.add('error');
+                    input.setAttribute('aria-invalid', 'true');
                 } else {
                     input.classList.remove('error');
+                    input.removeAttribute('aria-invalid');
                     if (errorEl) {
                         errorEl.classList.remove('show');
                     }
@@ -948,7 +1046,20 @@ $user_posts = $posts_query->fetchAll();
             });
         });
 
-        console.log('Profile page loaded with handler integration');
+        /**
+         * Make post cards keyboard accessible
+         */
+        document.querySelectorAll('.post-card').forEach(card => {
+            card.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    card.click();
+                }
+            });
+        });
+
+        // Initialize
+        console.log('Profile page loaded successfully');
     </script>
 </body>
 </html>
