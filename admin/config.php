@@ -7,7 +7,7 @@
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'content_discovery');
+define('DB_NAME', 'kriativity');
 
 // Create database connection
 try {
@@ -52,7 +52,7 @@ function isAdminLoggedIn() {
  */
 function requireAdmin() {
     if (!isAdminLoggedIn()) {
-        header("Location: login.php");
+        header("Location: ../login.php");
         exit();
     }
 }

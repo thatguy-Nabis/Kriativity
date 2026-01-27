@@ -1,0 +1,122 @@
+/* ============================================
+   CLEAN FOOTER – INLINE STYLES
+   ============================================ */
+
+.footer-container {
+    margin-top: 4rem;
+    background: linear-gradient(180deg, rgba(21,5,29,.7), #15051d);
+    border-top: 1px solid rgba(206,161,245,.15);
+    padding: 3rem 2rem 2rem;
+    color: #e0e0e0;
+}
+
+.footer-content {
+    max-width: 1400px;
+    margin: auto;
+}
+
+.footer-top {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 3rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid rgba(206,161,245,.15);
+}
+
+.footer-logo {
+    font-size: 1.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg,#CEA1F5,#b88de0);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.footer-description {
+    margin-top: .5rem;
+    font-size: .95rem;
+    color: #a0a0a0;
+    line-height: 1.6;
+    max-width: 340px;
+}
+
+.footer-heading {
+    color: #CEA1F5;
+    font-weight: 700;
+    margin-bottom: .75rem;
+}
+
+.footer-links {
+    list-style: none;
+    padding: 0;
+}
+
+.footer-link {
+    display: inline-block;
+    margin-bottom: .5rem;
+    color: #a0a0a0;
+    font-size: .95rem;
+    transition: .2s;
+}
+
+.footer-link:hover {
+    color: #CEA1F5;
+    transform: translateX(4px);
+}
+
+.social-links {
+    display: flex;
+    gap: .75rem;
+    margin-top: 1rem;
+}
+
+.social-link {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(206,161,245,.12);
+    color: #CEA1F5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: .25s;
+}
+
+.social-link:hover {
+    background: rgba(206,161,245,.25);
+    transform: translateY(-3px);
+}
+
+.footer-bottom {
+    margin-top: 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.footer-copy {
+    font-size: .9rem;
+    color: #a0a0a0;
+}
+
+.back-to-top {
+    font-size: .9rem;
+    color: #CEA1F5;
+}
+
+.back-to-top:hover {
+    text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .footer-top {
+        grid-template-columns: 1fr;
+    }
+
+    .footer-bottom {
+        flex-direction: column;
+        text-align: center;
+    }
+}

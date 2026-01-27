@@ -24,6 +24,7 @@ if (!$user) {
 // Get categories
 $categories = ['Art', 'Photography', 'Design', 'Technology', 'Music', 'Writing', 'Video', 'Other'];
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>

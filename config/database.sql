@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS users (
     INDEX idx_email (email),
     INDEX idx_is_active (is_active),
     INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- CONTENT TABLE
@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS content (
     INDEX idx_category (category),
     INDEX idx_created_at (created_at),
     INDEX idx_is_published (is_published)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- FOLLOWERS TABLE
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS followers (
     -- Indexes
     INDEX idx_follower (follower_id),
     INDEX idx_following (following_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) 
 
 -- ============================================
 -- LIKES TABLE
@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS likes (
     -- Indexes
     INDEX idx_user_id (user_id),
     INDEX idx_content_id (content_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- COLLECTIONS TABLE
@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS collections (
     -- Indexes
     INDEX idx_user_id (user_id),
     INDEX idx_is_public (is_public)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- COLLECTION ITEMS TABLE
@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS collection_items (
     -- Indexes
     INDEX idx_collection_id (collection_id),
     INDEX idx_content_id (content_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- COMMENTS TABLE
@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS comments (
     INDEX idx_content_id (content_id),
     INDEX idx_user_id (user_id),
     INDEX idx_parent_id (parent_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- INSERT DEMO DATA (Optional)
@@ -303,7 +303,7 @@ CREATE TABLE IF NOT EXISTS admins (
     INDEX idx_username (username),
     INDEX idx_email (email),
     INDEX idx_is_active (is_active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- USER SUSPENSIONS TABLE (Simplified)
@@ -328,7 +328,7 @@ CREATE TABLE IF NOT EXISTS user_suspensions (
     INDEX idx_user_id (user_id),
     INDEX idx_admin_id (admin_id),
     INDEX idx_is_active (is_active)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- USER REPORTS TABLE (Simplified)
@@ -357,7 +357,7 @@ CREATE TABLE IF NOT EXISTS user_reports (
     INDEX idx_reporter (reporter_id),
     INDEX idx_reported_user (reported_user_id),
     INDEX idx_status (status)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- ADMIN ACTIVITY LOG (Simplified)
@@ -380,7 +380,7 @@ CREATE TABLE IF NOT EXISTS admin_activity_log (
     INDEX idx_admin_id (admin_id),
     INDEX idx_action (action),
     INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ;
 
 -- ============================================
 -- ADD SUSPENSION STATUS TO USERS TABLE
@@ -404,7 +404,7 @@ ADD INDEX idx_is_suspended (is_suspended);
 INSERT INTO admins (username, email, password, full_name, is_active)
 VALUES (
     'admin',
-    'admin2@kriativity.com',
+    'admin@kriativity.com',
     '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi',
     'Administrator',
     1
@@ -426,3 +426,18 @@ VALUES (
 --     (SELECT COUNT(*) FROM user_suspensions) as total_suspensions,
 --     (SELECT COUNT(*) FROM user_reports) as total_reports,
 --     (SELECT COUNT(*) FROM admin_activity_log) as total_logs;
+CREATE TABLE user_preferences (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL UNIQUE,
+
+    preferred_categories JSON,
+    preferred_content_types JSON,
+    discovery_goal VARCHAR(50),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+ALTER TABLE users 
+ADD COLUMN onboarding_completed TINYINT(1) DEFAULT 0;

@@ -5,7 +5,7 @@
 
 // Database credentials
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'content_discovery');
+define('DB_NAME', 'kriativity');
 define('DB_USER', 'root');  // Change this to your database username
 define('DB_PASS', '');      // Change this to your database password
 define('DB_CHARSET', 'utf8mb4');
