@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'init.php';
 require_once 'config/database.php';
 
@@ -78,7 +78,7 @@ function highlight($text, $search) {
 }
 function truncate($text, $len = 120) {
     $text = h($text);
-    return mb_strlen($text) > $len ? mb_substr($text, 0, $len) . '…' : $text;
+    return mb_strlen($text) > $len ? mb_substr($text, 0, $len) . 'â€¦' : $text;
 }
 
 /**
@@ -263,7 +263,7 @@ if ($DEBUG_MODE === 'json') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title><?= $search_safe ? "Search: $search_safe" : "Search" ?> – Kriativity</title>
+    <title><?= $search_safe ? "Search: $search_safe" : "Search" ?> â€“ Kriativity</title>
 
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="styles/search.css">
@@ -328,7 +328,7 @@ if ($DEBUG_MODE === 'json') {
 
         <?php if ($total_results === 0): ?>
             <div class="empty-state">
-                <div class="empty-icon">🔍</div>
+                <div class="empty-icon">ðŸ”</div>
                 <h2 class="empty-title">No results found</h2>
                 <p class="empty-text">Try a different keyword.</p>
             </div>
@@ -376,34 +376,46 @@ if ($DEBUG_MODE === 'json') {
                 <div class="cards-grid">
                     <?php foreach ($content_results as $c): ?>
                         <?php
+                        // echo $c['image_url'];
                             $img = resolveImage($c['image_url'] ?? '');
                             $hasImg = ($img !== '');
+                            $category = $c['category'] ?? 'Uncategorized';
+                            $desc = $c['description'] ?? '';
+                            $descShort = mb_strlen($desc) > 100 ? mb_substr($desc, 0, 100) . '...' : $desc;
+                            $author = $c['username'] ?? ($c['full_name'] ?? 'Unknown');
                         ?>
                         <a href="post.php?id=<?= (int)$c['id'] ?>" class="content-card">
                             <div class="card-image <?= $hasImg ? '' : 'no-image' ?>"
-                                 <?= $hasImg ? "style=\"background-image:url('".h($img)."')\"" : '' ?>>
+                                 <?= $hasImg ? "style=\"background-image:url('".$c['image_url']."');background-size:cover;background-position:center;\"" : '' ?>>
                                 <div class="card-overlay">
-                                    <span class="overlay-text">View</span>
+                                    <span class="overlay-text">View Details →</span>
                                 </div>
                             </div>
 
                             <div class="card-content">
-                                <span class="card-category"><?= h($c['category'] ?? '') ?></span>
+                                <span class="card-category"><?= h($category) ?></span>
                                 <h3 class="card-title"><?= highlight($c['title'] ?? '', $search_query) ?></h3>
-                                <?php if (!empty($c['description'])): ?>
-                                    <p class="card-description"><?= highlight(truncate($c['description'], 120), $search_query) ?></p>
+                                <?php if ($desc !== ''): ?>
+                                    <p class="card-description"><?= highlight($descShort, $search_query) ?></p>
                                 <?php endif; ?>
-                                <div class="card-meta">By <?= h($c['full_name'] ?? '') ?></div>
                                 <div class="card-stats">
-                                    <span>👁️ <?= (int)($c['views'] ?? 0) ?></span>
-                                    <span>❤️ <?= (int)($c['likes'] ?? 0) ?></span>
+                                    <div class="stat-item">
+                                        <span class="stat-icon">👁️</span>
+                                        <span><?= (int)($c['views'] ?? 0) ?> views</span>
+                                    </div>
+                                    <div class="stat-item">
+                                        <span class="stat-icon">❤️</span>
+                                        <span><?= (int)($c['likes'] ?? 0) ?> likes</span>
+                                    </div>
                                 </div>
+                                <div class="card-author"><span>by <?= h($author) ?></span></div>
                             </div>
                         </a>
                     <?php endforeach; ?>
                 </div>
             </div>
         <?php endif; ?>
+
 
     <?php endif; ?>
 </div>
@@ -428,3 +440,6 @@ if ($DEBUG_MODE === 'json') {
 
 </body>
 </html>
+
+
+

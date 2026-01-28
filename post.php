@@ -7,18 +7,18 @@ $post_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if ($post_id <= 0) {
   header('Location: homepage.php');
   exit;
-  }
-  
-  try {
-    $stmt = $pdo->prepare("
+}
+
+try {
+  $stmt = $pdo->prepare("
     SELECT c.*, u.username, u.full_name, u.profile_image 
     FROM content c 
     JOIN users u ON c.user_id = u.id 
     WHERE c.id = :id AND c.is_published = 1
     ");
-    $stmt->execute([':id' => $post_id]);
-    $post = $stmt->fetch();
-    
+  $stmt->execute([':id' => $post_id]);
+  $post = $stmt->fetch();
+
   if (!$post) {
     header('Location: homepage.php');
     exit;
@@ -115,8 +115,39 @@ $related_posts = $stmt->fetchAll();
         </button>
 
         <button class="action-btn btn-share" onclick="sharePost()">🔗 Share</button>
+        <button class="action-btn btn-report" onclick="openReportModal('content', <?= $post['id'] ?>)">
+          🚩 Report
+        </button>
+
       </div>
     </div>
+    <div id="reportModal" class="modal hidden" onclick="closeReportModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h3>Report Content</h3>
+    
+        <select id="reportType">
+          <option value="">Select reason</option>
+          <option value="spam">Spam</option>
+          <option value="harassment">Harassment</option>
+          <option value="inappropriate">Inappropriate</option>
+          <option value="copyright">Copyright</option>
+          <option value="other">Other</option>
+        </select>
+    
+        <textarea
+          id="reportDescription"
+          placeholder="Describe the issue..."
+          rows="4"
+        ></textarea>
+    
+        <div style="text-align:right;">
+          <button onclick="submitReport()">Submit</button>
+          <button onclick="closeReportModal()">Cancel</button>
+        </div>
+      </div>
+      </div>
+
+
 
     <?php if ($related_posts): ?>
       <div class="related-section">
@@ -228,6 +259,46 @@ $related_posts = $stmt->fetchAll();
         });
       }
     }
+let reportTargetType = null;
+let reportTargetId = null;
+
+function openReportModal(type, id) {
+  reportTargetType = type;
+  reportTargetId = id;
+  document.getElementById('reportModal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeReportModal() {
+  document.getElementById('reportModal').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+
+async function submitReport() {
+  const type = document.getElementById('reportType').value;
+  const description = document.getElementById('reportDescription').value.trim();
+
+  if (!type || !description) {
+    alert('Please select a reason and add details.');
+    return;
+  }
+
+  const res = await fetch('handlers/report_handler.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      target_type: reportTargetType,
+      target_id: reportTargetId,
+      report_type: type,
+      description
+    })
+  });
+
+  const data = await res.json();
+  alert(data.message);
+  closeReportModal();
+}
 
     // =========================
     // NOTIFICATION HANDLER
