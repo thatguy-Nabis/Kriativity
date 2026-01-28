@@ -35,7 +35,7 @@ $result = $conn->query($sql);
                     <th>Target</th>
                     <th>Description</th>
                     <th>IP</th>
-                    <th>Date</th>
+                    <th>Time</th>
                 </tr>
                 </thead>
                 <tbody>
