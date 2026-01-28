@@ -1,18 +1,9 @@
 <?php
-// ============================================
-// SIGNUP HANDLER (CORRECT)
-// ============================================
-
-session_start();
-
-// Include required files
+require_once '../init.php';
 require_once '../config/database.php';
-require_once '../includes/auth.php';
 
-// Set JSON header
 header('Content-Type: application/json');
 
-// Check if request method is POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode([
         'success' => false,
@@ -21,116 +12,144 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Sanitize inputs
-$username = sanitizeInput($_POST['username'] ?? '');
-$email = sanitizeInput($_POST['email'] ?? '');
-$password = $_POST['password'] ?? '';
-$confirm_password = $_POST['confirm_password'] ?? '';
-$full_name = sanitizeInput($_POST['full_name'] ?? '');
-$bio = sanitizeInput($_POST['bio'] ?? '');
-$location = sanitizeInput($_POST['location'] ?? '');
-$website = sanitizeInput($_POST['website'] ?? '');
-
-// Init response
-$response = [
-    'success' => false,
-    'message' => '',
-    'errors' => []
-];
-
 $errors = [];
 
-/* =========================
+/* ============================
+   INPUTS
+============================ */
+$username = trim($_POST['username'] ?? '');
+$email = trim($_POST['email'] ?? '');
+$password = $_POST['password'] ?? '';
+$confirm_password = $_POST['confirm_password'] ?? '';
+$full_name = trim($_POST['full_name'] ?? '');
+$location = trim($_POST['location'] ?? '');
+$website = trim($_POST['website'] ?? '');
+$bio = trim($_POST['bio'] ?? '');
+
+/* ============================
    VALIDATION
-   ========================= */
+============================ */
 
-if (empty($username)) {
+// Username
+if ($username === '') {
     $errors['username'] = 'Username is required';
-} elseif (!validateUsername($username)) {
-    $errors['username'] = 'Invalid username format';
-} elseif (usernameExists($pdo, $username)) {
-    $errors['username'] = 'Username already taken';
+} elseif (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
+    $errors['username'] = 'Only letters, numbers, and underscores are allowed';
 }
 
-if (empty($email)) {
+// Email
+if ($email === '') {
     $errors['email'] = 'Email is required';
-} elseif (!validateEmail($email)) {
-    $errors['email'] = 'Invalid email format';
-} elseif (emailExists($pdo, $email)) {
-    $errors['email'] = 'Email already registered';
+} elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    $errors['email'] = 'Invalid email address';
 }
 
-if (empty($password)) {
+// Password
+if ($password === '') {
     $errors['password'] = 'Password is required';
-} else {
-    $passwordValidation = validatePassword($password);
-    if (!$passwordValidation['valid']) {
-        $errors['password'] = $passwordValidation['message'];
-    }
+} elseif (strlen($password) < 8) {
+    $errors['password'] = 'Password must be at least 8 characters';
+} elseif (
+    !preg_match('/[a-z]/', $password) ||
+    !preg_match('/[A-Z]/', $password) ||
+    !preg_match('/[0-9]/', $password)
+) {
+    $errors['password'] = 'Password must include uppercase, lowercase, and number';
 }
 
-if ($password !== $confirm_password) {
+// Confirm password
+if ($confirm_password === '') {
+    $errors['confirm_password'] = 'Please confirm your password';
+} elseif ($password !== $confirm_password) {
     $errors['confirm_password'] = 'Passwords do not match';
 }
 
-if (empty($full_name)) {
+// Full name
+if ($full_name === '') {
     $errors['full_name'] = 'Full name is required';
 }
 
-if (!empty($website) && !filter_var($website, FILTER_VALIDATE_URL)) {
-    $errors['website'] = 'Invalid website URL';
+// Website (OPTIONAL)
+if ($website !== '' && !filter_var($website, FILTER_VALIDATE_URL)) {
+    $errors['website'] = 'Website must be a valid URL (including https://)';
 }
 
+// Bio length
 if (strlen($bio) > 500) {
-    $errors['bio'] = 'Bio must be less than 500 characters';
+    $errors['bio'] = 'Bio cannot exceed 500 characters';
 }
 
+/* ============================
+   RETURN FIELD ERRORS
+============================ */
 if (!empty($errors)) {
-    $response['errors'] = $errors;
-    $response['message'] = 'Please fix the errors below';
-    echo json_encode($response);
+    echo json_encode([
+        'success' => false,
+        'message' => 'Please correct the highlighted errors',
+        'errors' => $errors
+    ]);
     exit;
 }
 
-/* =========================
-   CREATE USER
-   ========================= */
+/* ============================
+   CHECK DUPLICATES
+============================ */
+try {
+    // Username exists
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
+    $stmt->execute([$username]);
+    if ($stmt->fetch()) {
+        $errors['username'] = 'Username is already taken';
+    }
 
-$userData = [
-    'username' => $username,
-    'email' => $email,
-    'password' => $password,
-    'full_name' => $full_name,
-    'bio' => $bio,
-    'location' => $location,
-    'website' => $website
-];
+    // Email exists
+    $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+    $stmt->execute([$email]);
+    if ($stmt->fetch()) {
+        $errors['email'] = 'Email is already registered';
+    }
 
-$result = registerUser($pdo, $userData);
+    if (!empty($errors)) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Some fields need attention',
+            'errors' => $errors
+        ]);
+        exit;
+    }
 
-if (!$result['success']) {
-    $response['message'] = $result['message'];
-    echo json_encode($response);
-    exit;
+    /* ============================
+       CREATE USER
+    ============================ */
+    $hashed = password_hash($password, PASSWORD_DEFAULT);
+
+    $stmt = $pdo->prepare("
+        INSERT INTO users
+        (username, email, password, full_name, location, website, bio)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ");
+
+    $stmt->execute([
+        $username,
+        $email,
+        $hashed,
+        $full_name,
+        $location ?: null,
+        $website ?: null,
+        $bio ?: null
+    ]);
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Account created successfully!',
+        'redirect' => 'login.php'
+    ]);
+
+} catch (PDOException $e) {
+    error_log('[SIGNUP_ERROR] ' . $e->getMessage());
+
+    echo json_encode([
+        'success' => false,
+        'message' => 'Server error. Please try again later.'
+    ]);
 }
-
-/* =========================
-   SET SESSION
-   ========================= */
-
-$_SESSION['user_id'] = $result['user_id'];
-$_SESSION['username'] = $username;
-$_SESSION['full_name'] = $full_name;
-
-generateCSRFToken();
-
-/* =========================
-   REDIRECT TO ONBOARDING
-   ========================= */
-
-$response['success'] = true;
-$response['message'] = 'Signup successful';
-$response['redirect'] = './onboarding_preferences.php';
-
-echo json_encode($response);
-exit;

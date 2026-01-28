@@ -1,598 +1,430 @@
 <?php
-// ============================================
-// SEARCH PAGE - Backend Logic
-// Primary Color: #CEA1F5 (Purple)
-// Secondary Color: #15051d (Dark Purple)
-// ============================================
+require_once 'init.php';
+require_once 'config/database.php';
 
-session_start();
+/**
+ * ==========================================================
+ * DEBUG CONFIG
+ * ==========================================================
+ * Use:
+ *   ?q=Bee&debug=1      -> shows debug panel on page
+ *   ?q=Bee&debug=json   -> returns JSON only
+ */
+$DEBUG_MODE = $_GET['debug'] ?? ''; // '' | '1' | 'json'
+$DEBUG = ($DEBUG_MODE === '1' || $DEBUG_MODE === 'json');
 
-// Database connection
-$db_host = 'localhost';
-$db_name = 'content_discovery';
-$db_user = 'root';
-$db_pass = '';
+$debug = [
+    'step_1_input' => [],
+    'step_2_env'   => [],
+    'step_3_db'    => [],
+    'step_4_users' => [],
+    'step_5_posts' => [],
+    'step_6_images'=> [],
+    'step_7_render'=> [],
+    'errors'       => [],
+];
 
-try {
-    $pdo = new PDO("mysql:host=$db_host;dbname=$db_name;charset=utf8mb4", $db_user, $db_pass);
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-} catch(PDOException $e) {
-    die("Database connection failed");
+function dbg_add(&$debug, $step, $data) {
+    $debug[$step][] = $data;
+}
+function dbg_error(&$debug, $message, $extra = null) {
+    $debug['errors'][] = ['message' => $message, 'extra' => $extra];
 }
 
-// Get and sanitize search query
-$search_query = isset($_GET['q']) ? trim($_GET['q']) : '';
-$search_query_safe = htmlspecialchars($search_query, ENT_QUOTES, 'UTF-8');
+// ==========================================================
+// STEP 1: INPUT
+// ==========================================================
+$search_query = trim($_GET['q'] ?? '');
+$search_safe  = htmlspecialchars($search_query, ENT_QUOTES, 'UTF-8');
 
-// Initialize results arrays
-$users_results = [];
+dbg_add($debug, 'step_1_input', [
+    'raw_GET' => $_GET,
+    'search_query' => $search_query,
+    'length_chars' => mb_strlen($search_query),
+]);
+
+// ==========================================================
+// STEP 2: ENV
+// ==========================================================
+dbg_add($debug, 'step_2_env', [
+    'php_version' => PHP_VERSION,
+    'pdo_loaded' => extension_loaded('pdo'),
+    'mbstring_loaded' => extension_loaded('mbstring'),
+    'document_root' => $_SERVER['DOCUMENT_ROOT'] ?? null,
+    'script_name' => $_SERVER['SCRIPT_NAME'] ?? null,
+    'request_uri' => $_SERVER['REQUEST_URI'] ?? null,
+]);
+
+// ==========================================================
+// STEP 3: DB TEST
+// ==========================================================
+try {
+    $pdo->query("SELECT 1");
+    dbg_add($debug, 'step_3_db', ['connected' => true, 'test' => 'SELECT 1 OK']);
+} catch (Throwable $e) {
+    dbg_add($debug, 'step_3_db', ['connected' => false]);
+    dbg_error($debug, 'DB connection failed', $e->getMessage());
+}
+
+// ==========================================================
+// HELPERS
+// ==========================================================
+function h($v) {
+    return htmlspecialchars($v ?? '', ENT_QUOTES, 'UTF-8');
+}
+function highlight($text, $search) {
+    if ($search === '') return h($text);
+    return preg_replace('/' . preg_quote($search, '/') . '/i', '<mark>$0</mark>', h($text));
+}
+function truncate($text, $len = 120) {
+    $text = h($text);
+    return mb_strlen($text) > $len ? mb_substr($text, 0, $len) . '…' : $text;
+}
+
+/**
+ * Normalize image URL (relative -> root-relative)
+ * - "uploads/x.jpg" -> "/uploads/x.jpg"
+ * - "/uploads/x.jpg" -> "/uploads/x.jpg"
+ * - "http(s)://..." stays same
+ */
+function resolveImage(?string $url): string {
+    if (!$url) return '';
+    if (preg_match('/^https?:\/\//i', $url)) return $url;
+    return '/' . ltrim($url, '/');
+}
+
+/**
+ * Check if local file exists (only works for local paths).
+ * If image is external URL, returns null.
+ */
+function localFileExists(string $publicUrl): ?bool {
+    if ($publicUrl === '') return false;
+    if (preg_match('/^https?:\/\//i', $publicUrl)) return null;
+
+    $root = $_SERVER['DOCUMENT_ROOT'] ?? '';
+    if ($root === '') return null;
+
+    $path = rtrim($root, '/') . $publicUrl; // publicUrl is like "/uploads/..."
+    return file_exists($path);
+}
+
+// ==========================================================
+// RESULTS
+// ==========================================================
+$users_results   = [];
 $content_results = [];
-$collections_results = [];
-$total_results = 0;
 
-// Only search if query is not empty
-if (!empty($search_query) && strlen($search_query) >= 2) {
-    // Prepare search pattern for LIKE queries
-    $search_pattern = '%' . $search_query . '%';
-    
+// ==========================================================
+// STEP 4 & 5: SEARCH
+// ==========================================================
+if ($search_query !== '' && mb_strlen($search_query) >= 2) {
+    $pattern = '%' . $search_query . '%';
+    dbg_add($debug, 'step_1_input', ['pattern' => $pattern]);
+
+    // ---------------- USERS ----------------
     try {
-        // ============================================
-        // SEARCH USERS (Creators)
-        // ============================================
-        $users_stmt = $pdo->prepare("
-            SELECT 
-                id, 
-                username, 
-                full_name, 
-                bio, 
+        $sql_users = "
+            SELECT
+                id,
+                username,
+                full_name,
+                bio,
                 location,
                 profile_image,
                 followers,
-                total_posts
+                total_posts,
+                is_active,
+                is_suspended
             FROM users
-            WHERE is_active = 1 
-            AND (
-                username LIKE :pattern 
-                OR full_name LIKE :pattern 
-                OR bio LIKE :pattern
-                OR location LIKE :pattern
-            )
+            WHERE is_active = 1
+              AND is_suspended = 0
+              AND (
+                    username LIKE :p1
+                 OR full_name LIKE :p2
+                 OR COALESCE(bio,'') LIKE :p3
+                 OR COALESCE(location,'') LIKE :p4
+              )
             ORDER BY followers DESC
             LIMIT 10
-        ");
-        $users_stmt->execute(['pattern' => $search_pattern]);
-        $users_results = $users_stmt->fetchAll();
-        
-        // ============================================
-        // SEARCH CONTENT
-        // ============================================
-        $content_stmt = $pdo->prepare("
-            SELECT 
+        ";
+        dbg_add($debug, 'step_4_users', ['sql' => $sql_users]);
+
+        $stmt = $pdo->prepare($sql_users);
+        $stmt->execute([
+            'p1' => $pattern,
+            'p2' => $pattern,
+            'p3' => $pattern,
+            'p4' => $pattern
+        ]);
+        $users_results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        dbg_add($debug, 'step_4_users', [
+            'count' => count($users_results),
+            'sample' => array_slice($users_results, 0, 2)
+        ]);
+    } catch (Throwable $e) {
+        dbg_error($debug, 'Users query failed', $e->getMessage());
+    }
+
+    // ---------------- POSTS ----------------
+    try {
+        $sql_posts = "
+            SELECT
                 c.id,
                 c.title,
                 c.description,
                 c.category,
                 c.image_url,
-                c.content_type,
                 c.views,
                 c.likes,
                 c.created_at,
+                c.is_published,
+                u.id AS user_id,
                 u.username,
                 u.full_name,
-                u.profile_image
+                u.is_active,
+                u.is_suspended
             FROM content c
-            INNER JOIN users u ON c.user_id = u.id
+            JOIN users u ON u.id = c.user_id
             WHERE c.is_published = 1
-            AND (
-                c.title LIKE :pattern 
-                OR c.description LIKE :pattern
-                OR c.category LIKE :pattern
-            )
+              AND u.is_active = 1
+              AND u.is_suspended = 0
+              AND (
+                    c.title LIKE :p1
+                 OR COALESCE(c.description,'') LIKE :p2
+                 OR COALESCE(c.category,'') LIKE :p3
+              )
             ORDER BY c.created_at DESC
             LIMIT 20
-        ");
-        $content_stmt->execute(['pattern' => $search_pattern]);
-        $content_results = $content_stmt->fetchAll();
-        
-        // ============================================
-        // SEARCH COLLECTIONS
-        // ============================================
-        $collections_stmt = $pdo->prepare("
-            SELECT 
-                col.id,
-                col.name,
-                col.description,
-                col.created_at,
-                u.username,
-                u.full_name,
-                COUNT(ci.id) as item_count
-            FROM collections col
-            INNER JOIN users u ON col.user_id = u.id
-            LEFT JOIN collection_items ci ON col.id = ci.collection_id
-            WHERE col.is_public = 1
-            AND (
-                col.name LIKE :pattern 
-                OR col.description LIKE :pattern
-            )
-            GROUP BY col.id
-            ORDER BY col.created_at DESC
-            LIMIT 10
-        ");
-        $collections_stmt->execute(['pattern' => $search_pattern]);
-        $collections_results = $collections_stmt->fetchAll();
-        
-    } catch(PDOException $e) {
-        error_log("Search Error: " . $e->getMessage());
+        ";
+        dbg_add($debug, 'step_5_posts', ['sql' => $sql_posts]);
+
+        $stmt = $pdo->prepare($sql_posts);
+        $stmt->execute([
+            'p1' => $pattern,
+            'p2' => $pattern,
+            'p3' => $pattern
+        ]);
+        $content_results = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        dbg_add($debug, 'step_5_posts', [
+            'count' => count($content_results),
+            'sample' => array_slice($content_results, 0, 2)
+        ]);
+    } catch (Throwable $e) {
+        dbg_error($debug, 'Content query failed', $e->getMessage());
+    }
+
+} else {
+    dbg_add($debug, 'step_1_input', [
+        'search_skipped' => true,
+        'reason' => 'empty query or < 2 chars'
+    ]);
+}
+
+// ==========================================================
+// STEP 6: IMAGE DEBUG (resolve + file exists)
+// ==========================================================
+if ($DEBUG) {
+    foreach (array_slice($content_results, 0, 5) as $row) {
+        $raw = $row['image_url'] ?? '';
+        $resolved = resolveImage($raw);
+        $exists = localFileExists($resolved);
+
+        dbg_add($debug, 'step_6_images', [
+            'content_id' => $row['id'] ?? null,
+            'raw_image_url' => $raw,
+            'resolved_url' => $resolved,
+            'local_file_exists' => $exists, // true/false/null
+        ]);
     }
 }
 
-// Calculate total results
-$total_results = count($users_results) + count($content_results) + count($collections_results);
+// ==========================================================
+// STEP 7: RENDER COUNTS
+// ==========================================================
+$total_results = count($users_results) + count($content_results);
+dbg_add($debug, 'step_7_render', [
+    'users_count' => count($users_results),
+    'posts_count' => count($content_results),
+    'total' => $total_results
+]);
 
-// Helper function to highlight search terms
-function highlightSearchTerm($text, $search) {
-    if (empty($search) || empty($text)) return htmlspecialchars($text);
-    
-    $highlighted = preg_replace(
-        '/(' . preg_quote($search, '/') . ')/i',
-        '<mark>$1</mark>',
-        htmlspecialchars($text)
-    );
-    
-    return $highlighted;
-}
-
-// Helper function to truncate text
-function truncateText($text, $length = 150) {
-    if (strlen($text) <= $length) return $text;
-    return substr($text, 0, $length) . '...';
-}
-
-// Helper function to format numbers
-function formatNumber($num) {
-    if ($num >= 1000000) {
-        return round($num / 1000000, 1) . 'M';
-    } elseif ($num >= 1000) {
-        return round($num / 1000, 1) . 'K';
-    }
-    return $num;
+// ==========================================================
+// DEBUG JSON OUTPUT
+// ==========================================================
+if ($DEBUG_MODE === 'json') {
+    header('Content-Type: application/json');
+    echo json_encode($debug, JSON_PRETTY_PRINT);
+    exit;
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= !empty($search_query_safe) ? 'Search: ' . $search_query_safe : 'Search' ?> - Discover</title>
+    <title><?= $search_safe ? "Search: $search_safe" : "Search" ?> – Kriativity</title>
+
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles/search.css">
+
     <style>
-        /* Search-specific styles */
-        .search-header {
-            padding: 2rem 0 1rem;
-            border-bottom: 1px solid rgba(206, 161, 245, 0.1);
-            margin-bottom: 2rem;
-        }
-
-        .search-title {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #e0e0e0;
-            margin-bottom: 0.5rem;
-        }
-
-        .search-query {
-            color: #CEA1F5;
-        }
-
-        .search-stats {
-            color: #a0a0a0;
-            font-size: 0.95rem;
-        }
-
-        .search-filters {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 2rem;
-            flex-wrap: wrap;
-        }
-
-        .filter-btn {
-            padding: 0.5rem 1.25rem;
-            background: rgba(206, 161, 245, 0.1);
-            border: 1px solid rgba(206, 161, 245, 0.2);
-            border-radius: 20px;
-            color: #e0e0e0;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-
-        .filter-btn.active {
-            background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
-            color: #15051d;
-            border-color: transparent;
-        }
-
-        .filter-btn:hover:not(.active) {
-            background: rgba(206, 161, 245, 0.15);
-            border-color: #CEA1F5;
-        }
-
-        .results-section {
-            margin-bottom: 3rem;
-        }
-
-        .section-header {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .section-title {
-            font-size: 1.5rem;
-            padding: 0.25rem 0.75rem;
-            font-weight: 700;
-            color: #CEA1F5;
-            margin-top: 25px;
-        }
-
-        .section-count {
-            background: rgba(206, 161, 245, 0.15);
-            color: #CEA1F5;
-            padding: 0.25rem 0.75rem;
-            border-radius: 15px;
-            font-size: 0.85rem;
-            font-weight: 600;
-        }
-
-        /* User Results */
-        .users-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 1.5rem;
-        }
-
-        .user-card {
-            background: linear-gradient(135deg, rgba(206, 161, 245, 0.05) 0%, rgba(21, 5, 29, 0.8) 100%);
-            border: 1px solid rgba(206, 161, 245, 0.15);
+        /* debug panel only */
+        .debug-panel {
+            background: #0f0f0f;
+            border: 1px solid rgba(206,161,245,0.25);
             border-radius: 12px;
-            padding: 1.5rem;
-            text-align: center;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .user-card:hover {
-            transform: translateY(-5px);
-            border-color: #CEA1F5;
-            box-shadow: 0 10px 30px rgba(206, 161, 245, 0.2);
-        }
-
-        .user-avatar {
-            width: 80px;
-            height: 80px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #CEA1F5 0%, #a66fd9 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 1rem;
-            font-size: 2rem;
-            font-weight: 700;
-            color: #15051d;
-        }
-
-        .user-name {
-            font-size: 1.1rem;
-            font-weight: 700;
+            padding: 14px;
+            margin: 16px 0;
             color: #e0e0e0;
-            margin-bottom: 0.25rem;
+            overflow: auto;
         }
+        .debug-panel pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+        mark { background: rgba(206,161,245,0.35); color: #CEA1F5; padding: 0 4px; border-radius: 4px; }
 
-        .user-username {
-            color: #CEA1F5;
-            font-size: 0.9rem;
-            margin-bottom: 0.75rem;
-        }
-
-        .user-bio {
-            color: #a0a0a0;
-            font-size: 0.85rem;
-            margin-bottom: 1rem;
-            line-height: 1.5;
-        }
-
-        .user-stats {
-            display: flex;
-            justify-content: space-around;
-            padding-top: 1rem;
-            border-top: 1px solid rgba(206, 161, 245, 0.1);
-        }
-
-        .user-stat {
-            text-align: center;
-        }
-
-        .stat-value {
-            display: block;
-            font-weight: 700;
-            color: #CEA1F5;
-            font-size: 1rem;
-        }
-
-        .stat-label {
-            font-size: 0.75rem;
-            color: #a0a0a0;
-        }
-
-        /* Highlight matched text */
-        mark {
-            background-color: rgba(206, 161, 245, 0.3);
-            color: #CEA1F5;
-            padding: 0.1rem 0.2rem;
-            border-radius: 3px;
-        }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 4rem 2rem;
-        }
-
-        .empty-icon {
-            font-size: 4rem;
-            margin-bottom: 1rem;
-            opacity: 0.3;
-        }
-
-        .empty-title {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: #e0e0e0;
-            margin-bottom: 0.5rem;
-        }
-
-        .empty-text {
-            color: #a0a0a0;
-            font-size: 1rem;
-        }
-
-        .suggestions {
-            margin-top: 1.5rem;
-            color: #a0a0a0;
-            font-size: 0.9rem;
-        }
-
-        .suggestions ul {
-            list-style: none;
-            padding: 0;
-            margin-top: 0.75rem;
-        }
-
-        .suggestions li {
-            margin-bottom: 0.5rem;
-        }
-
-        .suggestions li::before {
-            content: "•";
-            color: #CEA1F5;
-            font-weight: bold;
-            display: inline-block;
-            width: 1em;
+        /* image fallback in case your search.css doesn't have it yet */
+        .content-card .card-image.no-image {
+            background: linear-gradient(135deg, rgba(206,161,245,0.35), rgba(21,5,29,0.9));
         }
     </style>
 </head>
 <body>
-    <?php include 'header.php'; ?>
 
-    <div class="main-container">
-        <!-- Search Header -->
-        <div class="search-header">
-            <?php if (!empty($search_query_safe)): ?>
-                <h1 class="search-title">
-                    Search results for "<span class="search-query"><?= $search_query_safe ?></span>"
-                </h1>
-                <p class="search-stats">
-                    Found <?= $total_results ?> result<?= $total_results !== 1 ? 's' : '' ?>
-                </p>
-            <?php else: ?>
-                <h1 class="search-title">Search</h1>
-                <p class="search-stats">Enter a search term to find creators, content, and collections</p>
-            <?php endif; ?>
+<?php include 'header.php'; ?>
+
+<div class="main-container">
+
+    <?php if ($DEBUG_MODE === '1'): ?>
+        <div class="debug-panel">
+            <strong>DEBUG PANEL</strong>
+            <div style="opacity:.8;margin:6px 0 10px;">
+                Try: <code>?q=Bee&debug=json</code> for raw JSON
+            </div>
+            <pre><?= h(json_encode($debug, JSON_PRETTY_PRINT)) ?></pre>
+        </div>
+    <?php endif; ?>
+
+    <div class="search-header">
+        <?php if ($search_safe): ?>
+            <h1 class="search-title">
+                Search results for "<span class="search-query"><?= $search_safe ?></span>"
+            </h1>
+            <p class="search-stats">
+                Found <?= (int)$total_results ?> result<?= $total_results !== 1 ? 's' : '' ?>
+            </p>
+        <?php else: ?>
+            <h1 class="search-title">Search</h1>
+            <p class="search-stats">Start typing to discover creators and content</p>
+        <?php endif; ?>
+    </div>
+
+    <?php if ($search_safe): ?>
+
+        <div class="search-filters">
+            <button class="filter-btn active" data-filter="all">All (<?= (int)$total_results ?>)</button>
+            <button class="filter-btn" data-filter="users">Creators (<?= (int)count($users_results) ?>)</button>
+            <button class="filter-btn" data-filter="content">Content (<?= (int)count($content_results) ?>)</button>
         </div>
 
-        <?php if (!empty($search_query_safe)): ?>
-            <!-- Filter Tabs -->
-            <div class="search-filters">
-                <button class="filter-btn active" data-filter="all">
-                    All Results (<?= $total_results ?>)
-                </button>
-                <button class="filter-btn" data-filter="users">
-                    Creators (<?= count($users_results) ?>)
-                </button>
-                <button class="filter-btn" data-filter="content">
-                    Content (<?= count($content_results) ?>)
-                </button>
-                <button class="filter-btn" data-filter="collections">
-                    Collections (<?= count($collections_results) ?>)
-                </button>
+        <?php if ($total_results === 0): ?>
+            <div class="empty-state">
+                <div class="empty-icon">🔍</div>
+                <h2 class="empty-title">No results found</h2>
+                <p class="empty-text">Try a different keyword.</p>
             </div>
+        <?php endif; ?>
 
-            <?php if ($total_results > 0): ?>
-                <!-- Users Results -->
-                <?php if (count($users_results) > 0): ?>
-                <div class="results-section" data-section="users">
-                    <div class="section-header">
-                        <h2 class="section-title">Creators</h2>
-                        <span class="section-count"><?= count($users_results) ?></span>
-                    </div>
-                    
-                    <div class="users-grid">
-                        <?php foreach ($users_results as $user): ?>
-                        <a href="profile.php?id=<?= $user['id'] ?>" class="user-card">
-                            <div class="user-avatar">
-                                <?= strtoupper($user['full_name'][0]) ?>
-                            </div>
-                            <div class="user-name"><?= highlightSearchTerm($user['full_name'], $search_query) ?></div>
-                            <div class="user-username">@<?= highlightSearchTerm($user['username'], $search_query) ?></div>
-                            <?php if (!empty($user['bio'])): ?>
-                            <p class="user-bio">
-                                <?= highlightSearchTerm(truncateText($user['bio'], 100), $search_query) ?>
-                            </p>
+        <?php if ($users_results): ?>
+            <div class="results-section" data-section="users">
+                <div class="section-header">
+                    <h2 class="section-title">Creators</h2>
+                    <span class="section-count"><?= (int)count($users_results) ?></span>
+                </div>
+
+                <div class="users-grid">
+                    <?php foreach ($users_results as $u): ?>
+                        <a href="profile.php?id=<?= (int)$u['id'] ?>" class="user-card">
+                            <div class="user-avatar"><?= strtoupper(($u['full_name'] ?? 'U')[0]) ?></div>
+                            <div class="user-name"><?= highlight($u['full_name'] ?? '', $search_query) ?></div>
+                            <div class="user-username">@<?= highlight($u['username'] ?? '', $search_query) ?></div>
+                            <?php if (!empty($u['bio'])): ?>
+                                <p class="user-bio"><?= highlight(truncate($u['bio'], 100), $search_query) ?></p>
                             <?php endif; ?>
                             <div class="user-stats">
                                 <div class="user-stat">
-                                    <span class="stat-value"><?= formatNumber($user['total_posts']) ?></span>
+                                    <span class="stat-value"><?= (int)($u['total_posts'] ?? 0) ?></span>
                                     <span class="stat-label">Posts</span>
                                 </div>
                                 <div class="user-stat">
-                                    <span class="stat-value"><?= formatNumber($user['followers']) ?></span>
+                                    <span class="stat-value"><?= (int)($u['followers'] ?? 0) ?></span>
                                     <span class="stat-label">Followers</span>
                                 </div>
                             </div>
                         </a>
-                        <?php endforeach; ?>
-                    </div>
+                    <?php endforeach; ?>
                 </div>
-                <?php endif; ?>
-
-<!-- Content Results -->
-<?php if (count($content_results) > 0): ?>
-<div class="results-section" data-section="content">
-    <div class="section-header">
-        <h2 class="section-title">Content</h2>
-        <span class="section-count"><?= count($content_results) ?></span>
-    </div>
-    
-    <div class="cards-grid">
-        <?php foreach ($content_results as $content): ?>
-        <a href="post.php?id=<?= $content['id'] ?>" class="content-card">
-            <div class="card-image" style="background: url('<?= htmlspecialchars($content['image_url']) ?>') center/cover no-repeat;">
-                <div class="card-overlay">
-                    <span class="overlay-text">View Details</span>
-                </div>
-            </div>
-            <div class="card-content">
-                <span class="card-category"><?= htmlspecialchars($content['category']) ?></span>
-                <h3 class="card-title"><?= highlightSearchTerm($content['title'], $search_query) ?></h3>
-                <?php if (!empty($content['description'])): ?>
-                <p class="card-description">
-                    <?= highlightSearchTerm(truncateText($content['description'], 120), $search_query) ?>
-                </p>
-                <?php endif; ?>
-                <div class="card-meta">
-                    By <?= htmlspecialchars($content['full_name']) ?>
-                </div>
-                <div class="card-stats">
-                    <span class="stat-item">👁️ <?= formatNumber($content['views']) ?></span>
-                    <span class="stat-item">❤️ <?= formatNumber($content['likes']) ?></span>
-                </div>
-            </div>
-        </a>
-        <?php endforeach; ?>
-    </div>
-</div>
-<?php endif; ?>
-
-<!-- Collections Results -->
-<?php if (count($collections_results) > 0): ?>
-<div class="results-section" data-section="collections">
-    <div class="section-header">
-        <h2 class="section-title">Collections</h2>
-        <span class="section-count"><?= count($collections_results) ?></span>
-    </div>
-    
-    <div class="cards-grid">
-        <?php foreach ($collections_results as $collection): ?>
-        <a href="collection.php?id=<?= $collection['id'] ?>" class="content-card">
-            <div class="card-image" style="
-                background: <?= !empty($collection['image_url']) 
-                    ? "url('" . htmlspecialchars($collection['image_url']) . "') center/cover no-repeat" 
-                    : 'linear-gradient(135deg, #CEA1F5 0%, #15051d 100%)' ?>;">
-                <div class="card-overlay">
-                    <span class="overlay-text"><?= $collection['item_count'] ?> items</span>
-                </div>
-            </div>
-            <div class="card-content">
-                <h3 class="card-title"><?= highlightSearchTerm($collection['name'], $search_query) ?></h3>
-                <?php if (!empty($collection['description'])): ?>
-                <p class="card-description">
-                    <?= highlightSearchTerm(truncateText($collection['description'], 120), $search_query) ?>
-                </p>
-                <?php endif; ?>
-                <div class="card-meta">
-                    By <?= htmlspecialchars($collection['full_name']) ?>
-                </div>
-            </div>
-        </a>
-        <?php endforeach; ?>
-    </div>
-</div>
-<?php endif; ?>
-
-
-            <?php else: ?>
-                <!-- Empty State -->
-                <div class="empty-state">
-                    <div class="empty-icon">🔍</div>
-                    <h2 class="empty-title">No results found</h2>
-                    <p class="empty-text">
-                        We couldn't find anything matching "<strong><?= $search_query_safe ?></strong>"
-                    </p>
-                    <div class="suggestions">
-                        <strong>Try:</strong>
-                        <ul>
-                            <li>Checking your spelling</li>
-                            <li>Using different keywords</li>
-                            <li>Searching for more general terms</li>
-                            <li>Using fewer keywords</li>
-                        </ul>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-        <?php else: ?>
-            <!-- No Query State -->
-            <div class="empty-state">
-                <div class="empty-icon">✨</div>
-                <h2 class="empty-title">Start Searching</h2>
-                <p class="empty-text">
-                    Use the search bar above to discover amazing creators, content, and collections
-                </p>
             </div>
         <?php endif; ?>
-    </div>
 
-    <script>
-        // Filter functionality
-        const filterBtns = document.querySelectorAll('.filter-btn');
-        const sections = document.querySelectorAll('.results-section');
+        <?php if ($content_results): ?>
+            <div class="results-section" data-section="content">
+                <div class="section-header">
+                    <h2 class="section-title">Content</h2>
+                    <span class="section-count"><?= (int)count($content_results) ?></span>
+                </div>
 
-        filterBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const filter = btn.dataset.filter;
-                
-                // Update active button
-                filterBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                
-                // Show/hide sections
-                if (filter === 'all') {
-                    sections.forEach(s => s.style.display = 'block');
-                } else {
-                    sections.forEach(s => {
-                        if (s.dataset.section === filter) {
-                            s.style.display = 'block';
-                        } else {
-                            s.style.display = 'none';
-                        }
-                    });
-                }
+                <div class="cards-grid">
+                    <?php foreach ($content_results as $c): ?>
+                        <?php
+                            $img = resolveImage($c['image_url'] ?? '');
+                            $hasImg = ($img !== '');
+                        ?>
+                        <a href="post.php?id=<?= (int)$c['id'] ?>" class="content-card">
+                            <div class="card-image <?= $hasImg ? '' : 'no-image' ?>"
+                                 <?= $hasImg ? "style=\"background-image:url('".h($img)."')\"" : '' ?>>
+                                <div class="card-overlay">
+                                    <span class="overlay-text">View</span>
+                                </div>
+                            </div>
+
+                            <div class="card-content">
+                                <span class="card-category"><?= h($c['category'] ?? '') ?></span>
+                                <h3 class="card-title"><?= highlight($c['title'] ?? '', $search_query) ?></h3>
+                                <?php if (!empty($c['description'])): ?>
+                                    <p class="card-description"><?= highlight(truncate($c['description'], 120), $search_query) ?></p>
+                                <?php endif; ?>
+                                <div class="card-meta">By <?= h($c['full_name'] ?? '') ?></div>
+                                <div class="card-stats">
+                                    <span>👁️ <?= (int)($c['views'] ?? 0) ?></span>
+                                    <span>❤️ <?= (int)($c['likes'] ?? 0) ?></span>
+                                </div>
+                            </div>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php endif; ?>
+
+    <?php endif; ?>
+</div>
+
+<script>
+    const buttons = document.querySelectorAll('.filter-btn');
+    const sections = document.querySelectorAll('.results-section');
+
+    buttons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const filter = btn.dataset.filter;
+
+            buttons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            sections.forEach(sec => {
+                sec.style.display = (filter === 'all' || sec.dataset.section === filter) ? 'block' : 'none';
             });
         });
-    </script>
+    });
+</script>
+
 </body>
 </html>

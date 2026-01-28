@@ -5,7 +5,7 @@ require_once 'init.php';
 // REDIRECT IF ALREADY LOGGED IN
 // ============================================
 if (isset($_SESSION['admin_id'])) {
-    header('Location: ./admin/admin_dashboard.php');
+    header('Location: admin/admin_dashboard.php');
     exit;
 }
 
@@ -14,149 +14,6 @@ if (isset($_SESSION['user_id'])) {
     exit;
 }
 
-// ============================================
-// DATABASE CONNECTION
-// ============================================
-try {
-    $pdo = new PDO(
-        "mysql:host=localhost;dbname=content_discovery;charset=utf8mb4",
-        "root",
-        "",
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-        ]
-    );
-    $db_connected = true;
-} catch (PDOException $e) {
-    error_log($e->getMessage());
-    $db_connected = false;
-}
-
-// ============================================
-// HANDLE LOGIN
-// ============================================
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    header('Content-Type: application/json');
-
-    $login = trim($_POST['username_or_email'] ?? '');
-    $password = $_POST['password'] ?? '';
-    $remember = isset($_POST['remember_me']);
-
-    if ($login === '' || $password === '') {
-        echo json_encode([
-            'success' => false,
-            'message' => 'Please fill all fields'
-        ]);
-        exit;
-    }
-
-    try {
-        // ============================================
-        // 1️⃣ CHECK ADMIN FIRST (EMAIL ONLY)
-        // ============================================
-        $stmt = $pdo->prepare("SELECT * FROM admins WHERE email = ?");
-        $stmt->execute([$login]);
-        $admin = $stmt->fetch();
-
-        // echo json_encode([
-        //     'debug' => $admin,
-        //     'success' => false,
-        //     'message' => $password
-        // ]);
-        // exit;
-
-        if ($admin) {
-            error_log("Debug message");
-            if ($password != $admin['password']) {
-                echo json_encode([
-                    'success' => false,
-                    'message' => 'Invalid password'
-                ]);
-                exit;
-            }
-
-            // ✅ ADMIN LOGIN SUCCESS
-            $_SESSION['admin_id'] = $admin['id'];
-            $_SESSION['admin_name'] = $admin['full_name'];
-            $_SESSION['admin_email'] = $admin['email'];
-
-            echo json_encode([
-                'success' => true,
-                'message' => 'Admin login successful',
-                'redirect' => './admin/admin_dashboard.php'
-            ]);
-            exit;
-        }
-
-        // ============================================
-        // 2️⃣ CHECK NORMAL USER
-        // ============================================
-        $stmt = $pdo->prepare(
-            "SELECT * FROM users WHERE email = ? OR username = ?"
-        );
-        $stmt->execute([$login, $login]);
-        $user = $stmt->fetch();
-
-        if (!$user) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Invalid credentials'
-            ]);
-            exit;
-        }
-
-        if ((int) $user['is_active'] !== 1) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Account is deactivated'
-            ]);
-            exit;
-        }
-
-        if (!password_verify($password, $user['password'])) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Invalid password'
-            ]);
-            exit;
-        }
-
-        // ✅ USER LOGIN SUCCESS
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
-        $_SESSION['full_name'] = $user['full_name'];
-        $_SESSION['email'] = $user['email'];
-
-        // Remember me
-        if ($remember) {
-            $token = bin2hex(random_bytes(32));
-            setcookie('remember_token', $token, time() + 86400 * 30, '/');
-            $pdo->prepare(
-                "UPDATE users SET remember_token = ? WHERE id = ?"
-            )->execute([$token, $user['id']]);
-        }
-
-        $pdo->prepare(
-            "UPDATE users SET last_login = NOW() WHERE id = ?"
-        )->execute([$user['id']]);
-
-        echo json_encode([
-            'success' => true,
-            'message' => 'Login successful',
-            'redirect' => 'homepage.php'
-        ]);
-        exit;
-
-    } catch (Exception $e) {
-        error_log($e->getMessage());
-        echo json_encode([
-            'success' => false,
-            'message' => 'Server error'
-        ]);
-        exit;
-    }
-}
 ?>
 
 
@@ -190,20 +47,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <p class="login-subtitle">Sign in to continue your journey</p>
             </div>
 
-            <!-- Demo Credentials Box -->
-            <!-- <div class="demo-box">
-            <div class="demo-title">🎯 Demo Credentials</div>
-            <div class="demo-credentials">
-                Username: <strong>demo</strong><br>
-                Password: <strong>Demo1234</strong>
-            </div>
-            <div class="db-status <?= $db_connected ? 'connected' : 'disconnected' ?>">
-                <?= $db_connected ? '✓ Database Connected' : '✗ Database Not Connected (Demo Mode Only)' ?>
-            </div>
-        </div> -->
 
             <!-- Login Form -->
-            <form class="login-form" id="loginForm">
+            <form class="login-form" id="loginForm" method="post">
                 <!-- Username or Email -->
                 <div class="form-group">
                     <label class="form-label" for="username_or_email">
@@ -321,7 +167,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 const formData = new FormData(form);
 
-                const response = await fetch(window.location.href, {
+                const response = await fetch('handlers/login_handler.php', {
                     method: 'POST',
                     body: formData
                 });
@@ -370,9 +216,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 showNotification('Social login coming soon!', 'error');
             });
         });
-
-        console.log('Login page loaded - Database status: <?= $db_connected ? "Connected" : "Not Connected" ?>');
-        console.log('Demo credentials: demo / Demo1234');
     </script>
 </body>
 

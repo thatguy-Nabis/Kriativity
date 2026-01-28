@@ -307,6 +307,16 @@ tr:hover {
     background: rgba(248, 113, 113, 0.2);
 }
 
+.btn-success {
+    background: rgba(74, 222, 128, 0.1);
+    color: #4ade80;
+    border: 1px solid rgba(74, 222, 128, 0.2);
+}
+
+.btn-success:hover {
+    background: rgba(74, 222, 128, 0.2);
+}
+
 .btn-warning {
     background: rgba(251, 191, 36, 0.1);
     color: #fbbf24;
@@ -430,6 +440,34 @@ select.form-control {
     gap: 12px;
     justify-content: flex-end;
     margin-top: 24px;
+}
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 999;
+}
+
+.modal-content {
+    background: #1c0f2a;
+    max-width: 420px;
+    margin: 8% auto;
+    padding: 20px;
+    border-radius: 12px;
+}
+
+.modal-content textarea,
+.modal-content input,
+.modal-content select {
+    width: 100%;
+    margin: 8px 0;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 15px;
 }
 
 /* ============================================

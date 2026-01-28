@@ -95,7 +95,7 @@ function timeAgo($datetime) {
     $difference = time() - $timestamp;
     
     if ($difference < 60) {
-        return $difference . " seconds ago";
+        return " Less than a minute ago";
     } elseif ($difference < 3600) {
         return floor($difference / 60) . " minutes ago";
     } elseif ($difference < 86400) {

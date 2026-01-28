@@ -1,20 +1,16 @@
 <?php
+
 // ============================================
-// LOGIN HANDLER
+// LOGIN HANDLER (FINAL – SUSPENSION SAFE)
 // ============================================
 
 session_start();
 
-
-
-// Include required files
 require_once '../config/database.php';
 require_once '../includes/auth.php';
 
-// Set JSON header
 header('Content-Type: application/json');
 
-// Check if request method is POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode([
         'success' => false,
@@ -23,91 +19,201 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// Get and sanitize form data
-$username_or_email = sanitizeInput($_POST['username_or_email'] ?? '');
+$username_or_email = trim($_POST['username_or_email'] ?? '');
 $password = $_POST['password'] ?? '';
 $remember_me = isset($_POST['remember_me']);
 
-// Initialize response
-$response = [
-    'success' => false,
-    'message' => ''
-];
-
-// Basic validation
-if (empty($username_or_email)) {
-    $response['message'] = 'Username or email is required';
-    echo json_encode($response);
+if ($username_or_email === '') {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Username or email is required'
+    ]);
     exit;
 }
 
-if (empty($password)) {
-    $response['message'] = 'Password is required';
-    echo json_encode($response);
+if ($password === '') {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Password is required'
+    ]);
     exit;
 }
 
-// Attempt login
-$result = loginUser($pdo, $username_or_email, $password);
+try {// ============================================
+    // 1️⃣ ADMIN LOGIN CHECK (EMAIL ONLY)
+    // ============================================
+    $stmt = $pdo->prepare("
+    SELECT *
+    FROM admins
+    WHERE email = ?
+    LIMIT 1
+");
+    $stmt->execute([$username_or_email]);
+    $admin = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if ($result['success']) {
-    $user = $result['user'];
+    if ($admin) {
 
-    // Set session variables
+        // Password check
+        if (!password_verify($password, $admin['password'])) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Incorrect admin password'
+            ]);
+            exit;
+        }
+
+        // Optional: admin suspension / active check
+        if (isset($admin['is_active']) && (int) $admin['is_active'] !== 1) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Admin account is disabled'
+            ]);
+            exit;
+        }
+
+        // ✅ ADMIN LOGIN SUCCESS
+        $_SESSION['admin_id'] = $admin['id'];
+        $_SESSION['admin_name'] = $admin['full_name'];
+        $_SESSION['admin_email'] = $admin['email'];
+        $_SESSION['is_admin'] = true;
+
+        generateCSRFToken();
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Admin login successful',
+            'redirect' => 'admin/admin_dashboard.php'
+        ]);
+        exit;
+    }
+
+    // ============================================
+    // FETCH USER
+    // ============================================
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM users
+        WHERE email = ? OR username = ?
+        LIMIT 1
+        ");
+    $stmt->execute([$username_or_email, $username_or_email]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$user) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'No account found with those credentials'
+        ]);
+        exit;
+    }
+
+    // ============================================
+    // PASSWORD CHECK (FIRST!)
+    // ============================================
+    if (!password_verify($password, $user['password'])) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Incorrect password'
+        ]);
+        exit;
+    }
+
+    // ============================================
+    // 🔴 SUSPENSION CHECK (CRITICAL FIX)
+    // ============================================
+    if ((int) $user['is_suspended'] === 1) {
+
+        // Temporary suspension expired → auto lift
+        if (!empty($user['suspended_until']) && strtotime($user['suspended_until']) <= time()) {
+
+            $pdo->prepare("
+                UPDATE users
+                SET is_suspended = 0,
+                    suspension_reason = NULL,
+                    suspended_until = NULL,
+                    is_active = 1
+                WHERE id = ?
+            ")->execute([$user['id']]);
+
+        } else {
+            // Still suspended
+            if (!empty($user['suspended_until'])) {
+                $date = date('F j, Y', strtotime($user['suspended_until']));
+                echo json_encode([
+                    'success' => false,
+                    'message' => "Your account has been suspended due to guideline violations. Please retry on {$date}."
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Your account has been permanently suspended due to guideline violations.'
+                ]);
+            }
+            exit;
+        }
+    }
+
+    // ============================================
+    // 🔒 ACTIVE CHECK
+    // ============================================
+    if ((int) $user['is_active'] !== 1) {
+        echo json_encode([
+            'success' => false,
+            'message' => 'Your account is currently deactivated'
+        ]);
+        exit;
+    }
+
+    // ============================================
+    // ✅ LOGIN SUCCESS
+    // ============================================
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
     $_SESSION['full_name'] = $user['full_name'];
     $_SESSION['email'] = $user['email'];
 
-    // Generate CSRF token for the session
     generateCSRFToken();
 
-    // 🔴 ONBOARDING SAFETY CHECK (CORRECT PLACE)
-    if ((int) $user['onboarding_completed'] === 0) {
-    $response['success'] = true;
-    $response['redirect'] = '../onboarding_preferences.php';
-    echo json_encode($response);
-    exit;
-}
-
-
-    // Handle remember me
+    // ============================================
+    // REMEMBER ME
+    // ============================================
     if ($remember_me) {
         $token = setRememberToken($pdo, $user['id']);
         if ($token) {
-            // Set cookie for 30 days
-            setcookie(
-                'remember_token',
-                $token,
-                time() + (86400 * 30), // 30 days
-                '/',
-                '',
-                true, // Secure (HTTPS only)
-                true  // HTTP only
-            );
-            setcookie(
-                'remember_user',
-                $user['id'],
-                time() + (86400 * 30),
-                '/',
-                '',
-                true,
-                true
-            );
+            setcookie('remember_token', $token, time() + 86400 * 30, '/', '', false, true);
+            setcookie('remember_user', $user['id'], time() + 86400 * 30, '/', '', false, true);
         }
     }
 
-    $response['success'] = true;
-    $response['message'] = $result['message'];
-    $response['redirect'] = '../homepage.php';
-    $response['user'] = [
-        'username' => $user['username'],
-        'full_name' => $user['full_name']
-    ];
-} else {
-    $response['message'] = $result['message'];
-}
+    // Update last login
+    $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?")
+        ->execute([$user['id']]);
 
-echo json_encode($response);
-exit;
-?>
+    // ============================================
+    // ONBOARDING REDIRECT
+    // ============================================
+    if ((int) $user['onboarding_completed'] === 0) {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Login successful',
+            'redirect' => 'onboarding_preferences.php'
+        ]);
+        exit;
+    }
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Login successful',
+        'redirect' => 'homepage.php'
+    ]);
+    exit;
+
+} catch (Throwable $e) {
+    error_log('[LOGIN ERROR] ' . $e->getMessage());
+
+    echo json_encode([
+        'success' => false,
+        'message' => 'Server error. Please try again later.'
+    ]);
+    exit;
+}

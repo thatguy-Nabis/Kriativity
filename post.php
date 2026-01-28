@@ -200,9 +200,9 @@ $related_posts = $stmt->fetchAll();
             }
 
             likeCount.textContent = Number(result.likes || 0).toLocaleString();
-            showNotification(result.message, 'success');
+            // showNotification(result.message, 'success');
           } else {
-            showNotification(result.message || 'Something went wrong', 'error');
+            // showNotification(result.message || 'Something went wrong', 'error');
             console.log(result.message);
           }
         } catch (error) {
