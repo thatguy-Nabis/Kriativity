@@ -17,8 +17,7 @@ try {
     WHERE c.id = :id AND c.is_published = 1
     ");
   $stmt->execute([':id' => $post_id]);
-  $post = $stmt->fetch();
-
+$post = $stmt->fetch(PDO::FETCH_ASSOC);
   if (!$post) {
     header('Location: homepage.php');
     exit;
@@ -83,7 +82,7 @@ $related_posts = $stmt->fetchAll();
 
       <div class="post-meta">
         <div class="post-author">
-          <div class="author-avatar"><?= strtoupper($post['full_name'][0]) ?></div>
+          <div class="author-avatar"><?= strtoupper($post['full_name'][0] ?? 'U') ?></div>
           <div>
             <div class="author-name"><?= htmlspecialchars($post['full_name']) ?></div>
             <div class="author-username">@<?= htmlspecialchars($post['username']) ?></div>
@@ -122,30 +121,45 @@ $related_posts = $stmt->fetchAll();
       </div>
     </div>
     <div id="reportModal" class="modal hidden" onclick="closeReportModal()">
-      <div class="modal-box" onclick="event.stopPropagation()">
-        <h3>Report Content</h3>
-    
-        <select id="reportType">
-          <option value="">Select reason</option>
-          <option value="spam">Spam</option>
-          <option value="harassment">Harassment</option>
-          <option value="inappropriate">Inappropriate</option>
-          <option value="copyright">Copyright</option>
-          <option value="other">Other</option>
-        </select>
-    
-        <textarea
-          id="reportDescription"
-          placeholder="Describe the issue..."
-          rows="4"
-        ></textarea>
-    
-        <div style="text-align:right;">
-          <button onclick="submitReport()">Submit</button>
-          <button onclick="closeReportModal()">Cancel</button>
-        </div>
-      </div>
-      </div>
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3>Report Content</h3>
+
+    <select id="reportType">
+      <option value="">Select reason</option>
+      <option value="spam">Spam</option>
+      <option value="harassment">Harassment</option>
+      <option value="inappropriate">Inappropriate</option>
+      <option value="copyright">Copyright</option>
+      <option value="other">Other</option>
+    </select>
+
+    <textarea id="reportDescription" placeholder="Describe the issue..." rows="4"></textarea>
+
+    <div style="text-align:right;">
+      <button onclick="submitReport()">Submit</button>
+      <button onclick="closeReportModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ COMMENTS SECTION OUTSIDE -->
+<div class="comments-section">
+  <h2 class="section-title">Comments</h2>
+
+  <?php if (isset($_SESSION['user_id'])): ?>
+    <div class="comment-input-box">
+      <textarea id="commentInput" placeholder="Write a comment..."></textarea>
+      <button id="postCommentBtn">Post</button>
+    </div>
+  <?php else: ?>
+    <p><a href="login.php">Login</a> to comment</p>
+  <?php endif; ?>
+
+  <div id="commentsContainer"></div>
+  <div id="commentsLoading" style="text-align:center;margin:1rem;">
+    Loading comments...
+  </div>
+</div>
 
 
 
@@ -178,142 +192,376 @@ $related_posts = $stmt->fetchAll();
 
   <div id="notification" class="notification"></div>
 
-  <script>
-    const likeBtn = document.getElementById('likeBtn');
-    const likeIcon = document.getElementById('likeIcon');
-    const likeText = document.getElementById('likeText');
-    const likeCount = document.getElementById('likeCount');
-    const notification = document.getElementById('notification');
+<script>
+  const likeBtn = document.getElementById('likeBtn');
+  const likeIcon = document.getElementById('likeIcon');
+  const likeText = document.getElementById('likeText');
+  const likeCount = document.getElementById('likeCount');
+  const notification = document.getElementById('notification');
 
-    let isLiked = <?php echo $user_has_liked ? 'true' : 'false'; ?>;
-    let currentLikes = <?php echo $post['likes']; ?>;
+  const CURRENT_USER_ID = <?= isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 'null' ?>;
 
-    // =========================
-    // LIKE BUTTON HANDLER
-    // =========================
-    if (likeBtn) {
-      likeBtn.addEventListener('click', async () => {
-        <?php if (!isset($_SESSION['user_id'])): ?>
-          showNotification('Please login to like posts', 'error');
-          setTimeout(() => {
-            window.location.href = 'login.php';
-          }, 1500);
-          return;
-        <?php endif; ?>
+  let isLiked = <?= $user_has_liked ? 'true' : 'false' ?>;
+  let currentLikes = <?= (int)$post['likes'] ?>;
 
-        likeBtn.disabled = true;
+  // =========================
+  // LIKE HANDLER
+  // =========================
+  if (likeBtn) {
+    likeBtn.addEventListener('click', async () => {
+      <?php if (!isset($_SESSION['user_id'])): ?>
+        showNotification('Please login to like posts', 'error');
+        setTimeout(() => window.location.href = 'login.php', 1500);
+        return;
+      <?php endif; ?>
 
-        try {
-          const response = await fetch('handlers/like_handler.php', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              post_id: <?php echo $post_id; ?>,
-              action: 'toggle'
-            })
-          });
+      likeBtn.disabled = true;
 
-          const result = await response.json();
-
-          if (result.success) {
-            isLiked = !!result.liked;
-
-            if (isLiked) {
-              likeBtn.classList.add('liked');
-              likeIcon.textContent = '❤️';
-              likeText.textContent = 'Liked';
-            } else {
-              likeBtn.classList.remove('liked');
-              likeIcon.textContent = '🤍';
-              likeText.textContent = 'Like';
-            }
-
-            likeCount.textContent = Number(result.likes || 0).toLocaleString();
-            // showNotification(result.message, 'success');
-          } else {
-            // showNotification(result.message || 'Something went wrong', 'error');
-            console.log(result.message);
-          }
-        } catch (error) {
-          console.error('Like error:', error);
-          showNotification('Failed to process like. Please try again.', 'error');
-        } finally {
-          likeBtn.disabled = false;
-        }
-      });
-    }
-
-    function sharePost() {
-      const url = window.location.href;
-
-      if (navigator.share) {
-        navigator.share({
-          title: '<?php echo addslashes($post['title']); ?>',
-          url
-        }).catch(() => { });
-      } else {
-        navigator.clipboard.writeText(url).then(() => {
-          showNotification('Link copied to clipboard!', 'success');
+      try {
+        const response = await fetch('handlers/like_handler.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            post_id: <?= $post_id ?>,
+            action: 'toggle'
+          })
         });
+
+        if (!response.ok) throw new Error('Network error');
+
+        const result = await response.json();
+
+        if (result.success) {
+          isLiked = !!result.liked;
+
+          likeBtn.classList.toggle('liked', isLiked);
+          likeIcon.textContent = isLiked ? '❤️' : '🤍';
+          likeText.textContent = isLiked ? 'Liked' : 'Like';
+
+          likeCount.textContent = Number(result.likes || 0).toLocaleString();
+        } else {
+          showNotification(result.message || 'Something went wrong', 'error');
+        }
+
+      } catch (error) {
+        console.error(error);
+        showNotification('Failed to process like.', 'error');
+      } finally {
+        likeBtn.disabled = false;
       }
-    }
-let reportTargetType = null;
-let reportTargetId = null;
-
-function openReportModal(type, id) {
-  reportTargetType = type;
-  reportTargetId = id;
-  document.getElementById('reportModal').classList.remove('hidden');
-  document.body.style.overflow = 'hidden';
-}
-
-function closeReportModal() {
-  document.getElementById('reportModal').classList.add('hidden');
-  document.body.style.overflow = '';
-}
-
-
-async function submitReport() {
-  const type = document.getElementById('reportType').value;
-  const description = document.getElementById('reportDescription').value.trim();
-
-  if (!type || !description) {
-    alert('Please select a reason and add details.');
-    return;
+    });
   }
 
-  const res = await fetch('handlers/report_handler.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      target_type: reportTargetType,
-      target_id: reportTargetId,
-      report_type: type,
-      description
-    })
+  // =========================
+  // SHARE
+  // =========================
+  function sharePost() {
+    const url = window.location.href;
+
+    if (navigator.share) {
+      navigator.share({
+        title: <?= json_encode($post['title']) ?>,
+        url
+      }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        showNotification('Link copied!', 'success');
+      });
+    }
+  }
+
+  // =========================
+  // REPORT MODAL
+  // =========================
+  let reportTargetType = null;
+  let reportTargetId = null;
+
+  function openReportModal(type, id) {
+    reportTargetType = type;
+    reportTargetId = id;
+    document.getElementById('reportModal').classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeReportModal() {
+    document.getElementById('reportModal').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  async function submitReport() {
+    const type = document.getElementById('reportType').value;
+    const description = document.getElementById('reportDescription').value.trim();
+
+    if (!type || !description) {
+      showNotification('Please fill all fields', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('handlers/report_handler.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_type: reportTargetType,
+          target_id: reportTargetId,
+          report_type: type,
+          description
+        })
+      });
+
+      const data = await res.json();
+      showNotification(data.message, data.success ? 'success' : 'error');
+      closeReportModal();
+
+    } catch (err) {
+      console.error(err);
+      showNotification('Report failed', 'error');
+    }
+  }
+
+  // =========================
+  // NOTIFICATIONS
+  // =========================
+  function showNotification(message, type = 'success') {
+    notification.textContent = message;
+    notification.className = `notification ${type} show`;
+
+    setTimeout(() => {
+      notification.classList.remove('show');
+    }, 3000);
+  }
+
+  // =========================
+  // ESCAPE HTML
+  // =========================
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // =========================
+  // COMMENTS
+  // =========================
+  const commentsContainer = document.getElementById('commentsContainer');
+  const commentsLoading = document.getElementById('commentsLoading');
+  const postCommentBtn = document.getElementById('postCommentBtn');
+  const commentInput = document.getElementById('commentInput');
+
+  let commentsData = [];
+
+function renderComments() {
+  commentsContainer.innerHTML = '';
+
+  commentsData.forEach(comment => {
+    const div = document.createElement('div');
+    div.className = 'comment';
+
+    const isOwner = comment.user_id === CURRENT_USER_ID;
+    const initial = (comment.full_name || comment.username || '?')[0].toUpperCase();
+
+    div.innerHTML = `
+      <div class="comment-header">
+        <div class="comment-avatar">${initial}</div>
+        <div class="comment-identity">
+          <span class="comment-user">${escapeHtml(comment.full_name || comment.username)}</span>
+          <span class="comment-username">@${escapeHtml(comment.username)}</span>
+        </div>
+        ${comment.is_edited == 1 ? '<span class="comment-edited">edited</span>' : ''}
+      </div>
+
+      <div class="comment-text">${escapeHtml(comment.comment_text)}</div>
+
+      <div class="comment-actions">
+        <button onclick="replyComment(${comment.id})">↩ Reply</button>
+        ${isOwner ? `
+          <button class="edit-btn" onclick="editComment(${comment.id})">✏ Edit</button>
+          <button class="delete-btn" onclick="deleteComment(${comment.id})">✕ Delete</button>
+        ` : ''}
+      </div>
+    `;
+
+    commentsContainer.appendChild(div);
+  });
+}
+  async function loadComments() {
+    commentsLoading.style.display = 'block';
+
+    try {
+      const res = await fetch('handlers/comment_handler.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'fetch',
+          post_id: <?= $post_id ?>
+        })
+      });
+
+      if (!res.ok) throw new Error('Fetch failed');
+
+      const data = await res.json();
+
+      if (data.success) {
+        commentsData = data.comments;
+        renderComments();
+      }
+
+    } catch (err) {
+      console.error(err);
+      showNotification('Failed to load comments', 'error');
+    }
+
+    commentsLoading.style.display = 'none';
+  }
+
+  loadComments();
+
+  // =========================
+  // ADD COMMENT
+  // =========================
+  postCommentBtn?.addEventListener('click', async () => {
+    const text = commentInput.value.trim();
+    if (!text) return;
+
+    try {
+      const res = await fetch('handlers/comment_handler.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add',
+          post_id: <?= $post_id ?>,
+          comment_text: text,
+          parent_id: null
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        commentInput.value = '';
+        loadComments();
+      } else {
+        showNotification(data.message, 'error');
+      }
+
+    } catch (err) {
+      console.error(err);
+      showNotification('Failed to post comment', 'error');
+    }
   });
 
-  const data = await res.json();
-  alert(data.message);
-  closeReportModal();
+  // =========================
+  // EDIT COMMENT
+  // =========================
+  async function editComment(id) {
+    const newText = prompt("Edit your comment:");
+    if (!newText) return;
+
+    try {
+      const res = await fetch('handlers/comment_handler.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'edit',
+          comment_id: id,
+          comment_text: newText
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        loadComments();
+      }
+
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // =========================
+  // DELETE COMMENT
+  // =========================
+  async function deleteComment(id) {
+    if (!confirm("Delete this comment?")) return;
+
+    try {
+      const res = await fetch('handlers/comment_handler.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'delete',
+          comment_id: id
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        loadComments();
+      }
+
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // Placeholder
+  function replyComment(id) {
+    alert("Reply feature coming soon");
+  }
+let selectedCommentId = null;
+
+// OPEN MODAL
+function openCommentModal(commentId) {
+  selectedCommentId = commentId;
+  document.getElementById("commentModal").classList.remove("hidden");
 }
 
-    // =========================
-    // NOTIFICATION HANDLER
-    // =========================
-    function showNotification(message, type = 'success') {
-      notification.textContent = message;
-      notification.className = `notification ${type}`;
-      notification.classList.add('show');
+// CLOSE MODAL
+function closeModal() {
+  document.getElementById("commentModal").classList.add("hidden");
+  selectedCommentId = null;
+}
 
-      setTimeout(() => {
-        notification.classList.remove('show');
-      }, 3000);
-    }
-  </script>
+// EDIT BUTTON
+document.getElementById("modalEditBtn").addEventListener("click", function () {
+  if (!selectedCommentId) return;
 
+  editComment(selectedCommentId);
+  closeModal();
+});
+
+// DELETE BUTTON
+document.getElementById("modalDeleteBtn").addEventListener("click", function () {
+  if (!selectedCommentId) return;
+
+  deleteComment(selectedCommentId);
+  closeModal();
+});
+</script>
+<div id="commentModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    
+    <h3>Comment Options</h3>
+
+    <button class="modal-btn edit-btn" id="modalEditBtn">
+      ✏️ Edit Comment
+    </button>
+
+    <button class="modal-btn delete-btn" id="modalDeleteBtn">
+      🗑️ Delete Comment
+    </button>
+
+    <button class="modal-btn cancel-btn" onclick="closeModal()">
+      ❌ Cancel
+    </button>
+
+  </div>
+</div>
 </body>
 
 </html>

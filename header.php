@@ -42,7 +42,7 @@ $current_page = basename($_SERVER['PHP_SELF'], '.php');
           </button>
 
           <div class="user-dropdown" id="userDropdownMenu">
-            <a href="profile.php">Profile</a>
+            <a href="profile.php?id=<?= $user['id'] ?>">Profile</a>
             <a href="settings.php">Settings</a>
             <div class="divider"></div>
             <a href="logout.php" class="danger">Logout</a>

@@ -21,7 +21,7 @@ DB_CONFIG = {
     "host": os.getenv("KR_DB_HOST", "127.0.0.1"),
     "user": os.getenv("KR_DB_USER", "root"),
     "password": os.getenv("KR_DB_PASS", ""),
-    "database": os.getenv("KR_DB_NAME", "content_discovery"),
+    "database": os.getenv("KR_DB_NAME", "kriativity"),
     "port": int(os.getenv("KR_DB_PORT", "3306")),
 }
 
@@ -121,10 +121,20 @@ def reload_model() -> int:
     return len(ids)
 
 
-@app.on_event("startup")
-def on_startup():
-    reload_model()
+from fastapi import FastAPI
 
+async def lifespan(app: FastAPI):
+    # Startup logic
+    reload_model()
+    yield
+    # Shutdown logic (optional)
+    # e.g., close DB connections, cleanup resources
+
+app = FastAPI(
+    title="Kriativity Content-Based Recommender",
+    version="1.1",
+    lifespan=lifespan
+)
 
 @app.get("/health")
 def health():
@@ -226,15 +236,28 @@ def recommend(user_id: int = Query(...), limit: int = 10) -> Dict[str, Any]:
         for idx in ranked:
             cid = item_ids[idx]
             # skip liked + near duplicates
-            if cid in liked_set or sims[idx] > 0.98:
-                continue
+            if cid in liked_set:
+              continue
             score = float(sims[idx])
-            if score <= 0:
-                continue
+            # if score <= 0:
+            #     continue
             recs.append({"content_id": int(cid), "score": score})
             if len(recs) >= limit:
                 break
+        if not recs:
+            cur.execute("""
+                SELECT id AS content_id,
+                    (COALESCE(views,0)*0.3 + COALESCE(likes,0)*0.7) AS score
+                FROM content
+                WHERE is_published = 1
+                ORDER BY score DESC
+                LIMIT %s
+            """, (limit,))
 
+            recs = [
+                {"content_id": int(r["content_id"]), "score": float(r["score"])}
+                for r in cur.fetchall()
+            ]
         return {
             "ok": True,
             "algorithm": "content_based_tfidf_cosine",
@@ -245,3 +268,6 @@ def recommend(user_id: int = Query(...), limit: int = 10) -> Dict[str, Any]:
     finally:
         cur.close()
         conn.close()
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)

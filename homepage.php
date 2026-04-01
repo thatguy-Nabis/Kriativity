@@ -226,38 +226,7 @@ $isLoggedIn = isset($_SESSION['user_id']);
   <script>
     const IS_LOGGED_IN = <?= $isLoggedIn ? 'true' : 'false' ?>;
 
-    (() => {
-      const tabButtons = document.querySelectorAll('.tab-button');
-      const tabContents = document.querySelectorAll('.tab-content');
 
-      window.trendingLoaded = false;
-      window.forYouLoaded = false;
-
-      function switchTab(tabName) {
-        // deactivate all
-        tabButtons.forEach(btn => btn.classList.remove('active'));
-        tabContents.forEach(tab => tab.classList.remove('active'));
-
-        // activate selected
-        document.querySelector(`[data-tab="${tabName}"]`)?.classList.add('active');
-        document.getElementById(`${tabName}-tab`)?.classList.add('active');
-
-        // lazy-load logic
-        if (tabName === 'for-you' && IS_LOGGED_IN && !window.forYouLoaded) {
-          loadForYou();            // ✅ ONLY HERE
-        }
-
-        if (tabName === 'trending' && !window.trendingLoaded) {
-          loadTrendingContent();  // ✅ ONLY HERE
-        }
-      }
-
-      tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-          switchTab(btn.dataset.tab);
-        });
-      });
-    })();
 
     function escapeHtml(text) {
       const div = document.createElement('div');

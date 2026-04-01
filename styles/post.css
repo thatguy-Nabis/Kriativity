@@ -362,3 +362,280 @@
     grid-template-columns: 1fr;
   }
 }
+/* =========================
+   COMMENTS SECTION
+   ========================= */
+.comments-section {
+  margin-top: 3rem;
+  padding: 2rem;
+  background: linear-gradient(
+    135deg,
+    rgba(206, 161, 245, 0.04) 0%,
+    rgba(21, 5, 29, 0.85) 100%
+  );
+  border: 1px solid rgba(206, 161, 245, 0.15);
+  border-radius: 16px;
+}
+
+.comments-section .section-title {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, #cea1f5, #a66fd9);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* LOGIN MESSAGE */
+.comments-section > p {
+  color: #a0a0a0;
+}
+.comments-section > p a {
+  color: #cea1f5;
+  text-decoration: none;
+  font-weight: 600;
+}
+.comments-section > p a:hover {
+  text-decoration: underline;
+}
+
+/* =========================
+   COMMENT INPUT
+   ========================= */
+.comment-input-box {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  align-items: flex-start;
+}
+
+.comment-input-box textarea {
+  flex: 1;
+  min-height: 80px;
+  padding: 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(206, 161, 245, 0.25);
+  background: rgba(0, 0, 0, 0.35);
+  color: #e8e8e8;
+  font-size: 0.95rem;
+  resize: vertical;
+  transition: border-color 0.25s, box-shadow 0.25s;
+  font-family: inherit;
+}
+
+.comment-input-box textarea::placeholder {
+  color: #666;
+}
+
+.comment-input-box textarea:focus {
+  outline: none;
+  border-color: #cea1f5;
+  box-shadow: 0 0 0 3px rgba(206, 161, 245, 0.1);
+}
+
+.comment-input-box button {
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, #cea1f5, #a66fd9);
+  color: #15051d;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+
+.comment-input-box button:hover {
+  opacity: 0.88;
+  transform: translateY(-1px);
+}
+
+/* =========================
+   COMMENTS LIST
+   ========================= */
+#commentsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+#commentsLoading {
+  text-align: center;
+  color: #666;
+  font-size: 0.9rem;
+  padding: 1rem 0;
+}
+
+/* =========================
+   SINGLE COMMENT CARD
+   ========================= */
+.comment {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(206, 161, 245, 0.1);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
+  transition: border-color 0.2s;
+}
+
+.comment:hover {
+  border-color: rgba(206, 161, 245, 0.22);
+}
+
+/* HEADER ROW — avatar + name + badge */
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.65rem;
+}
+
+/* Coloured initial avatar */
+.comment-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #cea1f5, #7e3fbf);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #15051d;
+  flex-shrink: 0;
+}
+
+.comment-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  line-height: 1.2;
+}
+
+/* Full name — bright, prominent */
+.comment-user {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #ffffff;
+}
+
+/* @username — muted, smaller */
+.comment-username {
+  font-size: 0.78rem;
+  color: #7a6a8a;
+  font-weight: 400;
+}
+
+/* (edited) badge */
+.comment-edited {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: #7a6a8a;
+  background: rgba(206, 161, 245, 0.08);
+  border: 1px solid rgba(206, 161, 245, 0.15);
+  padding: 0.15rem 0.5rem;
+  border-radius: 20px;
+}
+
+/* =========================
+   COMMENT BODY
+   ========================= */
+.comment-text {
+  font-size: 0.97rem;
+  line-height: 1.65;
+  color: #d0d0d0;
+  margin-bottom: 0.75rem;
+  /* visually separate from header with a subtle left border */
+  padding-left: 0.85rem;
+  border-left: 2px solid rgba(206, 161, 245, 0.18);
+}
+
+/* =========================
+   COMMENT ACTIONS
+   ========================= */
+.comment-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.comment-actions button {
+  background: transparent;
+  border: 1px solid rgba(206, 161, 245, 0.2);
+  color: #9a7abf;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: inherit;
+}
+
+.comment-actions button:hover {
+  background: rgba(206, 161, 245, 0.1);
+  border-color: #cea1f5;
+  color: #cea1f5;
+}
+
+/* EDIT BUTTON */
+.comment-actions button.edit-btn {
+  border-color: rgba(125, 211, 252, 0.25);
+  color: #7dd3fc;
+}
+.comment-actions button.edit-btn:hover {
+  background: rgba(125, 211, 252, 0.1);
+  border-color: #7dd3fc;
+  color: #7dd3fc;
+}
+
+/* DELETE BUTTON */
+.comment-actions button.delete-btn {
+  border-color: rgba(255, 107, 107, 0.25);
+  color: #ff8a8a;
+}
+.comment-actions button.delete-btn:hover {
+  background: rgba(255, 107, 107, 0.1);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+/* =========================
+   REPLY THREAD
+   ========================= */
+.reply {
+  margin-left: 2.5rem;
+  margin-top: 0.75rem;
+  border-left: 2px solid rgba(206, 161, 245, 0.2);
+  padding-left: 1rem;
+}
+
+/* =========================
+   RESPONSIVE
+   ========================= */
+@media (max-width: 600px) {
+  .comments-section {
+    padding: 1.25rem;
+  }
+
+  .comment-input-box {
+    flex-direction: column;
+  }
+
+  .comment-input-box button {
+    width: 100%;
+    padding: 0.75rem;
+  }
+
+  .comment-text {
+    padding-left: 0.6rem;
+  }
+
+  .comment-actions button {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.6rem;
+  }
+}
