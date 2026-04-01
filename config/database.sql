@@ -217,3 +217,21 @@ CREATE TABLE user_preferences (
 
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+--New changes April 1st 2026
+
+ALTER TABLE comments ADD is_deleted TINYINT(1) DEFAULT 0;
+
+-- Add column to users table
+ALTER TABLE users ADD COLUMN profile_views INT UNSIGNED NOT NULL DEFAULT 0;
+
+-- Create the view history table
+CREATE TABLE profile_views (
+    id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    viewer_id      INT UNSIGNED NOT NULL,
+    viewed_user_id INT UNSIGNED NOT NULL,
+    viewed_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_viewer   (viewer_id),
+    INDEX idx_viewed   (viewed_user_id),
+    INDEX idx_spam_guard (viewer_id, viewed_user_id, viewed_at)
+);
