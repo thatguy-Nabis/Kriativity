@@ -81,7 +81,7 @@ $user_posts = $posts_stmt->fetchAll(PDO::FETCH_ASSOC);
 $recently_viewed = [];
 if ($is_own_profile) {
     $rv_stmt = $pdo->prepare("
-        SELECT DISTINCT u.id, u.full_name, u.username, pv.viewed_at
+        SELECT DISTINCT u.id, u.full_name, u.username, u.profile_image, pv.viewed_at
         FROM profile_views pv
         JOIN users u ON u.id = pv.viewed_user_id
         WHERE pv.viewer_id = ?
@@ -162,6 +162,13 @@ if ($is_own_profile) {
             font-weight: 700;
             color: #15051d;
             box-shadow: 0 8px 30px rgba(206,161,245,.3);
+            overflow: hidden;
+        }
+
+        .profile-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
 
         .upload-badge {
@@ -304,7 +311,9 @@ if ($is_own_profile) {
             background: linear-gradient(135deg, #CEA1F5, #7e3fbf);
             display: flex; align-items: center; justify-content: center;
             font-weight: 700; font-size: .85rem; color: #15051d; flex-shrink: 0;
+            overflow: hidden;
         }
+        .rv-avatar img { width: 100%; height: 100%; object-fit: cover; }
         .rv-name    { font-size: .9rem; font-weight: 600; color: #fff; }
         .rv-handle  { font-size: .75rem; color: #7a6a8a; }
 
@@ -418,12 +427,16 @@ if ($is_own_profile) {
                 <!-- Avatar -->
                 <div class="profile-image-container">
                     <div class="profile-image" aria-label="Profile picture">
-                        <?= strtoupper(substr(htmlspecialchars($user['full_name']), 0, 1)) ?>
+                        <?php if (!empty($user['profile_image'])): ?>
+                            <img src="<?= htmlspecialchars($user['profile_image']) ?>" alt="Profile picture" id="profileAvatarImg">
+                        <?php else: ?>
+                            <span id="profileAvatarInitial"><?= strtoupper(substr(htmlspecialchars($user['full_name']), 0, 1)) ?></span>
+                        <?php endif; ?>
                     </div>
 
                     <?php if ($is_own_profile): ?>
                         <!-- Only own profile shows the upload badge -->
-                        <button class="upload-badge" title="Change profile picture" aria-label="Change profile picture">
+                        <button class="upload-badge" id="openAvatarPickerBtn" type="button" title="Change profile picture" aria-label="Change profile picture">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
                                  stroke="currentColor" stroke-width="2" aria-hidden="true">
                                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
@@ -438,7 +451,7 @@ if ($is_own_profile) {
                     <h1 class="profile-username" id="displayFullName">
                         <?= htmlspecialchars($user['full_name']) ?>
                     </h1>
-                    <p class="profile-handle">@<?= htmlspecialchars($user['username']) ?></p>
+                    <p class="profile-handle" id="displayUsername">@<?= htmlspecialchars($user['username']) ?></p>
 
                     <?php if (!empty($user['bio'])): ?>
                         <p class="profile-bio" id="displayBio"><?= htmlspecialchars($user['bio']) ?></p>
@@ -527,8 +540,24 @@ if ($is_own_profile) {
         <section class="edit-section" id="editSection" aria-labelledby="editSectionTitle">
             <h2 class="section-title" id="editSectionTitle">Edit Profile Information</h2>
 
-            <form id="profileForm" novalidate>
+            <form id="profileForm" method="POST" action="handlers/settings_handler.php" enctype="multipart/form-data" novalidate>
+                <input type="hidden" name="action" value="update_profile">
+                <input type="file" id="avatarInput" name="profile_image" accept="image/*" hidden>
                 <div class="form-grid">
+
+                    <div class="form-group">
+                        <label class="form-label" for="username">Username *</label>
+                        <input type="text" id="username" name="username" class="form-input"
+                               value="<?= htmlspecialchars($user['username']) ?>"
+                               required aria-required="true">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label" for="email">Email *</label>
+                        <input type="email" id="email" name="email" class="form-input"
+                               value="<?= htmlspecialchars($user['email']) ?>"
+                               required aria-required="true">
+                    </div>
 
                     <div class="form-group">
                         <label class="form-label" for="fullName">Full Name *</label>
@@ -589,7 +618,11 @@ if ($is_own_profile) {
                 <?php foreach ($recently_viewed as $rv): ?>
                     <a href="profile.php?id=<?= (int)$rv['id'] ?>" class="rv-card">
                         <div class="rv-avatar">
-                            <?= strtoupper(substr(htmlspecialchars($rv['full_name']), 0, 1)) ?>
+                            <?php if (!empty($rv['profile_image'])): ?>
+                                <img src="<?= htmlspecialchars($rv['profile_image']) ?>" alt="Profile">
+                            <?php else: ?>
+                                <?= strtoupper(substr(htmlspecialchars($rv['full_name']), 0, 1)) ?>
+                            <?php endif; ?>
                         </div>
                         <div>
                             <div class="rv-name"><?= htmlspecialchars($rv['full_name']) ?></div>
@@ -722,6 +755,10 @@ const cancelBtn     = document.getElementById('cancelBtn');
 const bioInput      = document.getElementById('bio');
 const charCountValue = document.getElementById('charCountValue');
 const saveBtn       = document.getElementById('saveBtn');
+const avatarInput   = document.getElementById('avatarInput');
+const avatarPickerBtn = document.getElementById('openAvatarPickerBtn');
+const profileImageEl = document.querySelector('.profile-image');
+const originalAvatarHTML = profileImageEl ? profileImageEl.innerHTML : '';
 
 toggleEditBtn.addEventListener('click', () => {
     const isActive = editSection.classList.toggle('active');
@@ -738,10 +775,33 @@ cancelBtn.addEventListener('click', () => {
     profileForm.reset();
     clearErrors();
     updateCharCount();
+    if (profileImageEl) profileImageEl.innerHTML = originalAvatarHTML;
 });
 
 bioInput.addEventListener('input', updateCharCount);
 function updateCharCount() { charCountValue.textContent = bioInput.value.length; }
+
+avatarPickerBtn?.addEventListener('click', () => avatarInput?.click());
+
+avatarInput?.addEventListener('change', function () {
+    const file = this.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+        showNotification('Image must be under 2 MB', 'error');
+        this.value = '';
+        if (profileImageEl) profileImageEl.innerHTML = originalAvatarHTML;
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        if (profileImageEl) {
+            profileImageEl.innerHTML = `<img src="${ev.target.result}" alt="Profile picture preview" id="profileAvatarImg">`;
+        }
+    };
+    reader.readAsDataURL(file);
+});
 
 // ── SAVE PROFILE ───────────────────────────────────────────────────────────────
 profileForm.addEventListener('submit', async (e) => {
@@ -752,13 +812,22 @@ profileForm.addEventListener('submit', async (e) => {
     saveBtn.disabled = true;
 
     try {
-        const res    = await fetch('handlers/profile_update_handler.php', { method: 'POST', body: new FormData(profileForm) });
+        const actionUrl = profileForm.getAttribute('action') || 'handlers/settings_handler.php';
+        const res    = await fetch(actionUrl, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: new FormData(profileForm)
+        });
         const result = await res.json();
 
         if (result.success) {
             const fd = new FormData(profileForm);
 
             document.getElementById('displayFullName').textContent = fd.get('full_name');
+            document.getElementById('displayUsername').textContent = `@${fd.get('username')}`;
 
             const bioEl = document.getElementById('displayBio');
             if (bioEl) { bioEl.textContent = fd.get('bio'); bioEl.style.display = fd.get('bio') ? 'block' : 'none'; }

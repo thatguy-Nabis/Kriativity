@@ -146,6 +146,13 @@
     color: #15051d;
     object-fit: cover;
     border: 3px solid rgba(206, 161, 245, 0.2);
+    overflow: hidden;
+}
+
+.user-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .user-name {

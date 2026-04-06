@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once 'init.php';
 require_once 'config/database.php';
 
@@ -344,7 +344,13 @@ if ($DEBUG_MODE === 'json') {
                 <div class="users-grid">
                     <?php foreach ($users_results as $u): ?>
                         <a href="profile.php?id=<?= (int)$u['id'] ?>" class="user-card">
-                            <div class="user-avatar"><?= strtoupper(($u['full_name'] ?? 'U')[0]) ?></div>
+                            <div class="user-avatar">
+                                <?php if (!empty($u['profile_image'])): ?>
+                                    <img src="<?= htmlspecialchars($u['profile_image']) ?>" alt="Profile">
+                                <?php else: ?>
+                                    <?= strtoupper(($u['full_name'] ?? 'U')[0]) ?>
+                                <?php endif; ?>
+                            </div>
                             <div class="user-name"><?= highlight($u['full_name'] ?? '', $search_query) ?></div>
                             <div class="user-username">@<?= highlight($u['username'] ?? '', $search_query) ?></div>
                             <?php if (!empty($u['bio'])): ?>

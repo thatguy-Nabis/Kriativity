@@ -19,7 +19,54 @@ function getCategories($pdo)
   }
 }
 
-function getContentFromDatabase($pdo, $page = 1, $limit = 12, $category = null, $search = null, $trending = false)
+function getUserPreferences($pdo, $userId)
+{
+  $defaults = [
+    'dark_mode' => 1,
+    'show_recommendations' => 1,
+    'preferred_category' => ''
+  ];
+
+  if (!$userId)
+    return $defaults;
+
+  try {
+    $stmt = $pdo->prepare("SELECT dark_mode, show_recommendations, preferred_category FROM user_preferences WHERE user_id = ?");
+    $stmt->execute([(int) $userId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row) {
+      return array_merge($defaults, $row);
+    }
+
+    return $defaults;
+  } catch (PDOException $e) {
+    // Backward compatibility with legacy schema using preferred_categories JSON.
+    if ($e->getCode() !== '42S22') {
+      error_log("Error fetching user preferences: " . $e->getMessage());
+      return $defaults;
+    }
+
+    try {
+      $stmt = $pdo->prepare("SELECT preferred_categories FROM user_preferences WHERE user_id = ?");
+      $stmt->execute([(int) $userId]);
+      $legacy = $stmt->fetch(PDO::FETCH_ASSOC);
+      if (!$legacy || empty($legacy['preferred_categories'])) {
+        return $defaults;
+      }
+
+      $decoded = json_decode((string) $legacy['preferred_categories'], true);
+      if (is_array($decoded) && !empty($decoded[0]) && is_string($decoded[0])) {
+        $defaults['preferred_category'] = trim($decoded[0]);
+      }
+      return $defaults;
+    } catch (PDOException $legacyError) {
+      error_log("Error fetching legacy user preferences: " . $legacyError->getMessage());
+      return $defaults;
+    }
+  }
+}
+
+function getContentFromDatabase($pdo, $page = 1, $limit = 12, $category = null, $search = null, $trending = false, $preferredCategory = '')
 {
   $page = max(1, (int) $page);
   $limit = max(1, min(48, (int) $limit));
@@ -43,11 +90,20 @@ function getContentFromDatabase($pdo, $page = 1, $limit = 12, $category = null, 
   }
 
   $scoreExpr = "(COALESCE(c.views,0) * 0.3 + COALESCE(c.likes,0) * 0.7)";
+  $orderParts = [];
+
+  $preferredCategory = trim((string) $preferredCategory);
+  if ($preferredCategory !== '' && (!$category || $category === 'all')) {
+    $orderParts[] = "CASE WHEN c.category = :preferred_category THEN 0 ELSE 1 END";
+    $params[':preferred_category'] = $preferredCategory;
+  }
 
   if ($trending)
-    $query .= " ORDER BY {$scoreExpr} DESC, c.created_at DESC";
+    $orderParts[] = "{$scoreExpr} DESC, c.created_at DESC";
   else
-    $query .= " ORDER BY c.created_at DESC";
+    $orderParts[] = "c.created_at DESC";
+
+  $query .= " ORDER BY " . implode(', ', $orderParts);
 
   $query .= " LIMIT :limit OFFSET :offset";
 
@@ -102,10 +158,10 @@ function getContentByIds($pdo, array $ids)
 }
 
 $is_ajax = isset($_GET['ajax']) && $_GET['ajax'] === 'true';
-if ($is_ajax) {
-  // header('Content-Type: application/json');
+$sessionUserId = isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : 0;
+$userPrefs = getUserPreferences($pdo, $sessionUserId);
 
-  // For You fetch by ids
+if ($is_ajax) {
   if (isset($_GET['ids'])) {
     $idsRaw = (string) $_GET['ids'];
     $ids = array_filter(explode(',', $idsRaw));
@@ -117,8 +173,14 @@ if ($is_ajax) {
   $category = isset($_GET['category']) ? (string) $_GET['category'] : 'all';
   $search = isset($_GET['search']) ? (string) $_GET['search'] : null;
   $trending = isset($_GET['trending']) && ($_GET['trending'] === 'true' || $_GET['trending'] === '1');
+  $preferredOnly = isset($_GET['preferred_only']) && ($_GET['preferred_only'] === 'true' || $_GET['preferred_only'] === '1');
 
-  $cards = getContentFromDatabase($pdo, $page, 12, $category, $search, $trending);
+  $preferredCategory = (string) ($userPrefs['preferred_category'] ?? '');
+  if ($preferredOnly && $preferredCategory !== '') {
+    $category = $preferredCategory;
+  }
+
+  $cards = getContentFromDatabase($pdo, $page, 12, $category, $search, $trending, $preferredCategory);
   echo json_encode(['cards' => $cards, 'page' => $page, 'hasMore' => count($cards) === 12]);
   exit;
 }
@@ -143,8 +205,7 @@ $isLoggedIn = isset($_SESSION['user_id']);
 
   <div class="content-tabs">
     <div class="tabs-container">
-      <!-- ✅ Always start on ALL -->
-      <button class="tab-button " data-tab="all">All</button>
+      <button class="tab-button" data-tab="all">All</button>
       <?php if ($isLoggedIn): ?>
         <button class="tab-button" data-tab="for-you">✨ For You</button>
       <?php endif; ?>
@@ -199,7 +260,7 @@ $isLoggedIn = isset($_SESSION['user_id']);
         <div class="empty-state" id="forYouEmpty" style="display:none;">
           <div class="empty-state-icon">🎨</div>
           <div class="empty-state-text">Like a few posts to personalize your feed</div>
-          <div class="empty-state-subtext">We’ll recommend similar content automatically.</div>
+          <div class="empty-state-subtext">We'll recommend similar content automatically.</div>
         </div>
 
         <div class="loading-indicator" id="forYouLoading">
@@ -225,53 +286,92 @@ $isLoggedIn = isset($_SESSION['user_id']);
 
   <script>
     const IS_LOGGED_IN = <?= $isLoggedIn ? 'true' : 'false' ?>;
-
-
+    const USER_PREF_CATEGORY = <?= json_encode((string) ($userPrefs['preferred_category'] ?? ''), JSON_UNESCAPED_UNICODE) ?>;
 
     function escapeHtml(text) {
       const div = document.createElement('div');
       div.textContent = text ?? '';
       return div.innerHTML;
     }
+
     function formatNumber(num) {
       num = Number(num) || 0;
       if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
       if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
       return String(num);
     }
+
     function createCardElement(card) {
       const div = document.createElement('div');
       div.className = 'content-card';
 
-      let imageStyle = '';
-      if (card.image_url) {
-        imageStyle = `background-image:url('${card.image_url}');background-size:cover;background-position:center;`;
+      const isVideo = card.content_type === 'video';
+      const thumbSrc = isVideo
+        ? (card.thumbnail_url || card.image_url || '')
+        : (card.image_url || '');
+
+      let mediaHTML;
+
+      if (isVideo && card.image_url) {
+        mediaHTML = `
+          <div class="card-media-wrap">
+            <img class="card-thumb" src="${escapeHtml(thumbSrc)}" alt="thumbnail">
+            <video class="card-video" src="${escapeHtml(card.image_url)}"
+                   muted loop playsinline preload="none"
+                   poster="${escapeHtml(thumbSrc)}"></video>
+            <div class="card-play-icon">▶</div>
+            <div class="card-overlay"><span class="overlay-text">View Details →</span></div>
+          </div>`;
+      } else if (thumbSrc) {
+        mediaHTML = `
+          <div class="card-media-wrap">
+            <div class="card-image" style="background-image:url('${escapeHtml(thumbSrc)}');"></div>
+            <div class="card-overlay"><span class="overlay-text">View Details →</span></div>
+          </div>`;
       } else {
-        const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F'];
-        const color = colors[(card.id || 0) % colors.length];
-        imageStyle = `background:linear-gradient(135deg, ${color}, #15051d);`;
+        const colors = ['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8','#F7DC6F'];
+        const color  = colors[(card.id || 0) % colors.length];
+        mediaHTML = `
+          <div class="card-media-wrap">
+            <div class="card-image" style="background:linear-gradient(135deg,${color},#15051d);"></div>
+            <div class="card-overlay"><span class="overlay-text">View Details →</span></div>
+          </div>`;
       }
 
       div.innerHTML = `
-    <div class="card-image" style="${imageStyle}">
-      <div class="card-overlay"><span class="overlay-text">View Details →</span></div>
-    </div>
-    <div class="card-content">
-      <span class="card-category">${escapeHtml(card.category || 'Uncategorized')}</span>
-      <h3 class="card-title">${escapeHtml(card.title || '')}</h3>
-      ${card.description ? `<p class="card-description">${escapeHtml(String(card.description).substring(0, 100))}${String(card.description).length > 100 ? '...' : ''}</p>` : ''}
-      <div class="card-stats">
-        <div class="stat-item"><span class="stat-icon">👁️</span><span>${formatNumber(card.views)} views</span></div>
-        <div class="stat-item"><span class="stat-icon">❤️</span><span>${formatNumber(card.likes)} likes</span></div>
-      </div>
-      <div class="card-author"><span>by ${escapeHtml(card.username || 'Unknown')}</span></div>
-    </div>
-  `;
+        ${mediaHTML}
+        <div class="card-content">
+          <span class="card-category">${escapeHtml(card.category || 'Uncategorized')}</span>
+          <h3 class="card-title">${escapeHtml(card.title || '')}</h3>
+          ${card.description ? `<p class="card-description">${escapeHtml(String(card.description).substring(0,100))}${String(card.description).length > 100 ? '…' : ''}</p>` : ''}
+          <div class="card-stats">
+            <div class="stat-item"><span class="stat-icon">👁️</span><span>${formatNumber(card.views)} views</span></div>
+            <div class="stat-item"><span class="stat-icon">❤️</span><span>${formatNumber(card.likes)} likes</span></div>
+            ${isVideo ? '<div class="stat-item"><span class="stat-icon">🎥</span><span>Video</span></div>' : ''}
+          </div>
+          <div class="card-author"><span>by ${escapeHtml(card.username || 'Unknown')}</span></div>
+        </div>
+      `;
+
+      // ✅ FIX: JS only controls video playback — CSS owns all opacity/visual transitions
+      if (isVideo && card.image_url) {
+        const video = div.querySelector('.card-video');
+
+        div.addEventListener('mouseenter', () => {
+          video.play().catch(() => {});
+        });
+
+        div.addEventListener('mouseleave', () => {
+          video.pause();
+          video.currentTime = 0;
+        });
+      }
+
       div.addEventListener('click', () => window.location.href = `post.php?id=${card.id}`);
       return div;
     }
 
-    // ALL infinite scroll
+    // ALL — infinite scroll
     (() => {
       let currentPage = 1;
       let isLoading = false;
@@ -289,7 +389,6 @@ $isLoggedIn = isset($_SESSION['user_id']);
 
       let trendingLoaded = false;
       let forYouLoaded = false;
-
 
       function hideAllTabs() {
         tabContents.forEach(t => {
@@ -321,7 +420,6 @@ $isLoggedIn = isset($_SESSION['user_id']);
         }
       };
 
-      /* ========= INITIAL TAB SELECTION ========= */
       document.addEventListener('DOMContentLoaded', () => {
         const params = new URLSearchParams(window.location.search);
         const tab = params.get('tab');
@@ -329,11 +427,10 @@ $isLoggedIn = isset($_SESSION['user_id']);
         if (tab === 'trending' || tab === 'for-you') {
           switchTab(tab);
         } else {
-          switchTab('all'); // default
+          switchTab('all');
         }
       });
 
-      /* ========= TAB BUTTON CLICKS ========= */
       tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
           const tab = btn.dataset.tab;
@@ -353,7 +450,11 @@ $isLoggedIn = isset($_SESSION['user_id']);
         isLoading = true;
         loadingIndicator.classList.add('active');
 
-        const params = new URLSearchParams({ ajax: 'true', page: String(currentPage), category: currentCategory });
+        const params = new URLSearchParams({
+          ajax: 'true',
+          page: String(currentPage),
+          category: currentCategory
+        });
 
         fetch(`homepage.php?${params.toString()}`)
           .then(r => r.json())
@@ -401,7 +502,7 @@ $isLoggedIn = isset($_SESSION['user_id']);
       loadMoreCards();
     })();
 
-    // FOR YOU (Python -> IDs -> cards)
+    // FOR YOU
     function loadForYou() {
       if (!IS_LOGGED_IN) return;
 
@@ -411,6 +512,36 @@ $isLoggedIn = isset($_SESSION['user_id']);
 
       if (!container || !loader || !empty) return;
 
+      const loadPreferredFallback = () => {
+        if (!USER_PREF_CATEGORY) {
+          loader.classList.remove('active');
+          empty.style.display = 'block';
+          empty.querySelector('.empty-state-text').textContent = 'No recommendations yet';
+          window.forYouLoaded = true;
+          return;
+        }
+
+        fetch('homepage.php?ajax=true&page=1&preferred_only=true')
+          .then(r => r.json())
+          .then(cardsData => {
+            const cards = cardsData.cards || [];
+            if (cards.length === 0) {
+              empty.style.display = 'block';
+              empty.querySelector('.empty-state-text').textContent = `No posts found in ${USER_PREF_CATEGORY} yet`;
+            } else {
+              cards.forEach(card => container.appendChild(createCardElement(card)));
+            }
+            loader.classList.remove('active');
+            window.forYouLoaded = true;
+          })
+          .catch(() => {
+            loader.classList.remove('active');
+            empty.style.display = 'block';
+            empty.querySelector('.empty-state-text').textContent = 'No recommendations yet';
+            window.forYouLoaded = true;
+          });
+      };
+
       loader.classList.add('active');
       empty.style.display = 'none';
       container.innerHTML = '';
@@ -418,26 +549,17 @@ $isLoggedIn = isset($_SESSION['user_id']);
       fetch('api/get_recommendations.php?limit=12')
         .then(r => r.json())
         .then(data => {
-          const recs = Array.isArray(data.recommendations)
-            ? data.recommendations
-            : [];
+          const recs = Array.isArray(data.recommendations) ? data.recommendations : [];
 
-          // ✅ EARLY EXIT: no recommendations
           if (recs.length === 0) {
-            loader.classList.remove('active');
-            empty.style.display = 'block';
-            empty.querySelector('.empty-state-text').textContent =
-              'No recommendations yet';
-            window.forYouLoaded = true;
+            loadPreferredFallback();
             return;
           }
 
           const ids = recs.map(r => r.content_id).filter(Boolean);
 
           if (ids.length === 0) {
-            loader.classList.remove('active');
-            empty.style.display = 'block';
-            window.forYouLoaded = true;
+            loadPreferredFallback();
             return;
           }
 
@@ -445,15 +567,11 @@ $isLoggedIn = isset($_SESSION['user_id']);
             .then(r => r.json())
             .then(cardsData => {
               const cards = cardsData.cards || [];
-
               if (cards.length === 0) {
                 empty.style.display = 'block';
               } else {
-                cards.forEach(card =>
-                  container.appendChild(createCardElement(card))
-                );
+                cards.forEach(card => container.appendChild(createCardElement(card)));
               }
-
               loader.classList.remove('active');
               window.forYouLoaded = true;
             });

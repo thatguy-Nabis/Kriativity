@@ -61,6 +61,13 @@
   font-weight: bold;
   font-size: 1.2rem;
   color: #15051d;
+  overflow: hidden;
+}
+
+.author-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .author-info {
@@ -505,6 +512,13 @@
   font-size: 0.85rem;
   color: #15051d;
   flex-shrink: 0;
+  overflow: hidden;
+}
+
+.comment-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .comment-identity {
@@ -638,4 +652,99 @@
     font-size: 0.72rem;
     padding: 0.2rem 0.6rem;
   }
+}
+/* ── VIDEO PLAYER ── */
+.video-player-wrap {
+    position: relative;
+    background: #000;
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    user-select: none;
+}
+.video-player-wrap video {
+    width: 100%;
+    display: block;
+    max-height: 540px;
+    object-fit: contain;
+}
+.video-big-play {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3.5rem;
+    color: #fff;
+    background: rgba(0,0,0,.35);
+    transition: opacity .2s;
+    pointer-events: none;
+}
+.video-big-play.hidden { opacity: 0; }
+
+.video-controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: .5rem .75rem .6rem;
+    background: linear-gradient(transparent, rgba(0,0,0,.8));
+    opacity: 0;
+    transition: opacity .25s;
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+}
+.video-player-wrap:hover .video-controls,
+.video-player-wrap.show-controls .video-controls { opacity: 1; }
+
+.vc-progress-bar {
+    position: relative;
+    height: 4px;
+    background: rgba(255,255,255,.25);
+    border-radius: 4px;
+    cursor: pointer;
+}
+.vc-progress-bar:hover { height: 6px; }
+.vc-progress-fill {
+    height: 100%;
+    background: #CEA1F5;
+    border-radius: 4px;
+    width: 0%;
+    pointer-events: none;
+}
+.vc-progress-thumb {
+    position: absolute;
+    top: 50%; right: 0;
+    transform: translate(50%,-50%);
+    width: 12px; height: 12px;
+    background: #CEA1F5;
+    border-radius: 50%;
+    pointer-events: none;
+    display: none;
+}
+.vc-progress-bar:hover .vc-progress-thumb { display: block; }
+
+.vc-bottom {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+}
+.vc-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1rem;
+    cursor: pointer;
+    padding: .2rem .4rem;
+    border-radius: 4px;
+    transition: background .15s;
+    line-height: 1;
+}
+.vc-btn:hover { background: rgba(255,255,255,.15); }
+.vc-mute, .vc-full { margin-left: auto; }
+.vc-full { margin-left: 0; }
+.vc-time {
+    font-size: .78rem;
+    color: rgba(255,255,255,.85);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }

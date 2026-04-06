@@ -73,7 +73,7 @@ try {
 
         // fetch user data
         $stmt = $pdo->prepare("
-            SELECT c.*, u.username, u.full_name
+            SELECT c.*, u.username, u.full_name, u.profile_image
             FROM comments c
             JOIN users u ON c.user_id = u.id
             WHERE c.id = ?
@@ -176,7 +176,8 @@ try {
                 c.created_at,
                 DATE_FORMAT(c.created_at, '%Y-%m-%d %H:%i') AS formatted_date,
                 u.username,
-                u.full_name
+                u.full_name,
+                u.profile_image
             FROM comments c
             JOIN users u ON c.user_id = u.id
             WHERE c.content_id = ?

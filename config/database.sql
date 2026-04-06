@@ -235,3 +235,78 @@ CREATE TABLE profile_views (
     INDEX idx_viewed   (viewed_user_id),
     INDEX idx_spam_guard (viewer_id, viewed_user_id, viewed_at)
 );
+-- ============================================================
+-- Kriativity — Settings SQL
+-- Run this once to add required columns and tables
+-- ============================================================
+
+
+-- 1. Add missing columns to users table (skip if already exist)
+-- ---------------------------------------------------------------
+
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS profile_image  VARCHAR(255)  DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS bio            TEXT          DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS location       VARCHAR(100)  DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS website        VARCHAR(255)  DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS last_login     DATETIME      DEFAULT NULL,
+    ADD COLUMN IF NOT EXISTS profile_views  INT UNSIGNED  NOT NULL DEFAULT 0;
+
+
+-- 2. User preferences table
+-- ---------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id                   INT UNSIGNED    AUTO_INCREMENT PRIMARY KEY,
+    user_id              INT UNSIGNED    NOT NULL UNIQUE,
+    dark_mode            TINYINT(1)      NOT NULL DEFAULT 1,
+    show_recommendations TINYINT(1)      NOT NULL DEFAULT 1,
+    preferred_category   VARCHAR(100)    DEFAULT NULL,
+    updated_at           TIMESTAMP       NOT NULL DEFAULT CURRENT_TIMESTAMP
+                                         ON UPDATE CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_prefs_user
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+
+-- 3. Profile views table (if not already created)
+-- ---------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS profile_views (
+    id             INT UNSIGNED  AUTO_INCREMENT PRIMARY KEY,
+    viewer_id      INT UNSIGNED  NOT NULL,
+    viewed_user_id INT UNSIGNED  NOT NULL,
+    viewed_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    INDEX idx_viewer       (viewer_id),
+    INDEX idx_viewed       (viewed_user_id),
+    INDEX idx_spam_guard   (viewer_id, viewed_user_id, viewed_at),
+
+    CONSTRAINT fk_pv_viewer
+        FOREIGN KEY (viewer_id)      REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_pv_viewed
+        FOREIGN KEY (viewed_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+
+-- 4. (Optional) Update last_login on every login
+-- Add this to your login handler after successful auth:
+-- ---------------------------------------------------------------
+-- UPDATE users SET last_login = NOW() WHERE id = :user_id;
+
+-- ============================================
+-- POST TAGS
+-- ============================================
+CREATE TABLE IF NOT EXISTS post_tags (
+    id      INT AUTO_INCREMENT PRIMARY KEY,
+    post_id INT NOT NULL,
+    tag     VARCHAR(30) NOT NULL,
+
+    INDEX idx_post (post_id),
+    INDEX idx_tag  (tag),
+
+    FOREIGN KEY (post_id) REFERENCES content(id) ON DELETE CASCADE
+);
+
+ALTER TABLE content ADD COLUMN thumbnail_url VARCHAR(255) DEFAULT NULL AFTER image_url;

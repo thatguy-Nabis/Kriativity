@@ -82,7 +82,13 @@ $related_posts = $stmt->fetchAll();
 
       <div class="post-meta">
         <div class="post-author">
-          <div class="author-avatar"><?= strtoupper($post['full_name'][0] ?? 'U') ?></div>
+          <div class="author-avatar">
+            <?php if (!empty($post['profile_image'])): ?>
+              <img src="<?= htmlspecialchars($post['profile_image']) ?>" alt="Author">
+            <?php else: ?>
+              <?= strtoupper($post['full_name'][0] ?? 'U') ?>
+            <?php endif; ?>
+          </div>
           <div>
             <div class="author-name"><?= htmlspecialchars($post['full_name']) ?></div>
             <div class="author-username">@<?= htmlspecialchars($post['username']) ?></div>
@@ -99,26 +105,33 @@ $related_posts = $stmt->fetchAll();
     </div>
 
     <div class="post-main-content">
-      <?php if ($post['image_url']): ?>
-        <img src="<?= htmlspecialchars($post['image_url']) ?>" class="post-image">
-      <?php endif; ?>
+      <?php if ($post['content_type'] === 'video' && $post['image_url']): ?>
+    <div class="video-player-wrap" id="videoWrap">
+        <video id="mainVideo"
+               src="<?= htmlspecialchars($post['image_url']) ?>"
+               poster="<?= htmlspecialchars($post['thumbnail_url'] ?? '') ?>"
+               preload="metadata"
+               playsinline></video>
 
-      <?php if ($post['description']): ?>
-        <p class="post-description-text"><?= nl2br(htmlspecialchars($post['description'])) ?></p>
-      <?php endif; ?>
+        <div class="video-controls" id="videoControls">
+            <div class="vc-progress-bar" id="progressBar">
+                <div class="vc-progress-fill" id="progressFill"></div>
+                <div class="vc-progress-thumb" id="progressThumb"></div>
+            </div>
+            <div class="vc-bottom">
+                <button class="vc-btn" id="playPauseBtn" title="Play / Pause">▶</button>
+                <span class="vc-time" id="vcTime">0:00 / 0:00</span>
+                <button class="vc-btn vc-mute" id="muteBtn" title="Mute">🔊</button>
+                <button class="vc-btn vc-full" id="fullBtn" title="Fullscreen">⛶</button>
+            </div>
+        </div>
 
-      <div class="post-actions">
-        <button id="likeBtn" class="action-btn btn-like <?= $user_has_liked ? 'liked' : '' ?>">
-          <span id="likeIcon"><?= $user_has_liked ? '❤️' : '🤍' ?></span>
-          <span id="likeText"><?= $user_has_liked ? 'Liked' : 'Like' ?></span>
-        </button>
-
-        <button class="action-btn btn-share" onclick="sharePost()">🔗 Share</button>
-        <button class="action-btn btn-report" onclick="openReportModal('content', <?= $post['id'] ?>)">
-          🚩 Report
-        </button>
-
-      </div>
+        <!-- big play overlay -->
+        <div class="video-big-play" id="bigPlay">▶</div>
+    </div>
+<?php elseif ($post['image_url']): ?>
+    <img src="<?= htmlspecialchars($post['image_url']) ?>" class="post-image" alt="<?= htmlspecialchars($post['title']) ?>">
+<?php endif; ?>
     </div>
     <div id="reportModal" class="modal hidden" onclick="closeReportModal()">
   <div class="modal-box" onclick="event.stopPropagation()">
@@ -362,10 +375,13 @@ function renderComments() {
 
     const isOwner = comment.user_id === CURRENT_USER_ID;
     const initial = (comment.full_name || comment.username || '?')[0].toUpperCase();
+    const avatarHTML = comment.profile_image
+      ? `<img src="${escapeHtml(comment.profile_image)}" alt="Avatar">`
+      : initial;
 
     div.innerHTML = `
       <div class="comment-header">
-        <div class="comment-avatar">${initial}</div>
+        <div class="comment-avatar">${avatarHTML}</div>
         <div class="comment-identity">
           <span class="comment-user">${escapeHtml(comment.full_name || comment.username)}</span>
           <span class="comment-username">@${escapeHtml(comment.username)}</span>
@@ -528,20 +544,112 @@ function closeModal() {
 }
 
 // EDIT BUTTON
-document.getElementById("modalEditBtn").addEventListener("click", function () {
-  if (!selectedCommentId) return;
+document.addEventListener('DOMContentLoaded', function () {
+  const modalEditBtn   = document.getElementById("modalEditBtn");
+  const modalDeleteBtn = document.getElementById("modalDeleteBtn");
 
-  editComment(selectedCommentId);
-  closeModal();
+  if (modalEditBtn) {
+    modalEditBtn.addEventListener("click", function () {
+      if (!selectedCommentId) return;
+      editComment(selectedCommentId);
+      closeModal();
+    });
+  }
+
+  if (modalDeleteBtn) {
+    modalDeleteBtn.addEventListener("click", function () {
+      if (!selectedCommentId) return;
+      deleteComment(selectedCommentId);
+      closeModal();
+    });
+  }
 });
+// ── VIDEO PLAYER ──────────────────────────────────────────────
+(function () {
+    const wrap       = document.getElementById('videoWrap');
+    if (!wrap) return;
 
-// DELETE BUTTON
-document.getElementById("modalDeleteBtn").addEventListener("click", function () {
-  if (!selectedCommentId) return;
+    const video      = document.getElementById('mainVideo');
+    const bigPlay    = document.getElementById('bigPlay');
+    const playBtn    = document.getElementById('playPauseBtn');
+    const muteBtn    = document.getElementById('muteBtn');
+    const fullBtn    = document.getElementById('fullBtn');
+    const progressBar   = document.getElementById('progressBar');
+    const progressFill  = document.getElementById('progressFill');
+    const progressThumb = document.getElementById('progressThumb');
+    const vcTime     = document.getElementById('vcTime');
 
-  deleteComment(selectedCommentId);
-  closeModal();
-});
+    function fmt(s) {
+        s = Math.floor(s || 0);
+        const m = Math.floor(s / 60);
+        const sec = String(s % 60).padStart(2, '0');
+        return `${m}:${sec}`;
+    }
+
+    function updatePlayUI() {
+        const paused = video.paused;
+        playBtn.textContent = paused ? '▶' : '⏸';
+        bigPlay.classList.toggle('hidden', !paused);
+    }
+
+    // Click on video area = play/pause
+    wrap.addEventListener('click', e => {
+        if (e.target.closest('.video-controls')) return;
+        video.paused ? video.play() : video.pause();
+    });
+
+    playBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        video.paused ? video.play() : video.pause();
+    });
+
+    video.addEventListener('play',  updatePlayUI);
+    video.addEventListener('pause', updatePlayUI);
+    video.addEventListener('ended', updatePlayUI);
+
+    // Progress
+    video.addEventListener('timeupdate', () => {
+        if (!video.duration) return;
+        const pct = (video.currentTime / video.duration) * 100;
+        progressFill.style.width  = pct + '%';
+        progressThumb.style.left  = pct + '%';
+        vcTime.textContent = `${fmt(video.currentTime)} / ${fmt(video.duration)}`;
+    });
+
+    // Seek
+    let seeking = false;
+    function seek(e) {
+        const rect = progressBar.getBoundingClientRect();
+        const pct  = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        video.currentTime = pct * video.duration;
+    }
+    progressBar.addEventListener('mousedown', e => { seeking = true; seek(e); });
+    document.addEventListener('mousemove',    e => { if (seeking) seek(e); });
+    document.addEventListener('mouseup',      ()  => { seeking = false; });
+
+    // Mute
+    muteBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        video.muted = !video.muted;
+        muteBtn.textContent = video.muted ? '🔇' : '🔊';
+    });
+
+    // Fullscreen
+    fullBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!document.fullscreenElement) wrap.requestFullscreen();
+        else document.exitFullscreen();
+    });
+
+    // Show controls briefly on touch
+    wrap.addEventListener('touchstart', () => {
+        wrap.classList.add('show-controls');
+        clearTimeout(wrap._hideTimer);
+        wrap._hideTimer = setTimeout(() => wrap.classList.remove('show-controls'), 3000);
+    });
+
+    updatePlayUI();
+})();
 </script>
 <div id="commentModal" class="modal-overlay hidden">
   <div class="modal-box">
