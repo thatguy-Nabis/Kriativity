@@ -208,6 +208,8 @@ if ($content_type === 'video' && $thumb_error !== UPLOAD_ERR_NO_FILE) {
 }
 // ── Insert post ───────────────────────────────────────────────────
 try {
+    $pdo->beginTransaction();
+
     $stmt = $pdo->prepare("
     INSERT INTO content (
         user_id, title, description, category,
@@ -273,7 +275,9 @@ $stmt->execute([
     ]);
 
 } catch (PDOException $e) {
-    $pdo->rollBack();
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
     error_log('[create_post] DB error: ' . $e->getMessage());
     fail('Failed to create post. Please try again.');
 }
