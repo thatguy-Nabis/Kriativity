@@ -31,6 +31,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $user_id = (int) $_SESSION['user_id'];
+$submission_token = (string) ($_POST['submission_token'] ?? '');
+
+if (
+    $submission_token === ''
+    || !isset($_SESSION['create_post_token'])
+    || !hash_equals((string) $_SESSION['create_post_token'], $submission_token)
+) {
+    fail('This form submission is no longer valid. Please refresh the page and try again.');
+}
 
 // ── Collect inputs ───────────────────────────────────────────────
 $title = trim($_POST['title'] ?? '');
@@ -80,6 +89,8 @@ if ($tags_raw !== '') {
 if (!empty($errors)) {
     fail('Please fix the errors below.', $errors);
 }
+
+unset($_SESSION['create_post_token']);
 
 // ── Media upload ──────────────────────────────────────────────────
 /*

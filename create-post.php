@@ -12,6 +12,9 @@ if (!$user) {
     exit;
 }
 
+$createPostToken = bin2hex(random_bytes(32));
+$_SESSION['create_post_token'] = $createPostToken;
+
 $categories = ['Art', 'Photography', 'Design', 'Technology', 'Music', 'Writing', 'Video', 'Other'];
 ?>
 <!DOCTYPE html>
@@ -521,6 +524,8 @@ $categories = ['Art', 'Photography', 'Design', 'Technology', 'Music', 'Writing',
         -->
             <form id="createPostForm" method="POST" action="handlers/create_post_handler.php"
                 enctype="multipart/form-data">
+                <input type="hidden" name="submission_token"
+                    value="<?= htmlspecialchars($createPostToken, ENT_QUOTES, 'UTF-8') ?>">
 
                 <!-- CONTENT TYPE -->
                 <div class="form-section">
@@ -665,6 +670,7 @@ $categories = ['Art', 'Photography', 'Design', 'Technology', 'Music', 'Writing',
 
         let currentType = 'image';
         let tags = [];
+        let isSubmitting = false;
         const MAX_TAGS = 10;
 
         // ── CONTENT TYPE SWITCH ───────────────────────────────────────────
@@ -846,6 +852,7 @@ $categories = ['Art', 'Photography', 'Design', 'Technology', 'Music', 'Writing',
         // ── FORM SUBMIT ───────────────────────────────────────────────────
         form.addEventListener('submit', async function (e) {
             e.preventDefault();
+            if (isSubmitting) return;
 
             // Client-side validation
             let valid = true;
@@ -860,13 +867,15 @@ $categories = ['Art', 'Photography', 'Design', 'Technology', 'Music', 'Writing',
             } else { clearError('categoryError'); }
 
             if (!valid) return;
-if (currentType === 'video' && !thumbInput.files[0]) {
-    showError('thumbnailError', 'Please upload a thumbnail for your video.');
-    valid = false;
-} else {
-    clearError('thumbnailError');
-}
+            if (currentType === 'video' && !thumbInput.files[0]) {
+                showError('thumbnailError', 'Please upload a thumbnail for your video.');
+                valid = false;
+            } else {
+                clearError('thumbnailError');
+            }
+            if (!valid) return;
             const orig = submitBtn.innerHTML;
+            isSubmitting = true;
             submitBtn.innerHTML = '⏳ Publishing…';
             submitBtn.disabled = true;
 
@@ -887,12 +896,14 @@ if (currentType === 'video' && !thumbInput.files[0]) {
                         });
                     }
                     showNotif(data.message || 'Something went wrong.', 'error');
+                    isSubmitting = false;
                     submitBtn.innerHTML = orig;
                     submitBtn.disabled = false;
                 }
             } catch (err) {
                 console.error(err);
                 showNotif('Network error. Please try again.', 'error');
+                isSubmitting = false;
                 submitBtn.innerHTML = orig;
                 submitBtn.disabled = false;
             }
